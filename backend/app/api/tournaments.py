@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.models.tournament import MatchFormat, TournamentLevel
 from app.models.user import User
 from app.schemas.common import PaginatedResponse
+from app.schemas.match import GenerateScheduleResponse
 from app.schemas.team import TeamResponse
 from app.schemas.tournament import (
     TournamentCreate,
@@ -15,7 +16,7 @@ from app.schemas.tournament import (
     TournamentTeamRegister,
     TournamentUpdate,
 )
-from app.services import tournament_service
+from app.services import scheduler_service, tournament_service
 
 router = APIRouter(prefix="/tournaments", tags=["Tournaments"])
 
@@ -122,4 +123,23 @@ def unregister_team_from_tournament(
     """Admin only: Unregister a team from a tournament."""
     tournament_service.unregister_team_from_tournament(
         db=db, tournament_id=tournament_id, team_id=team_id
+    )
+
+
+# --- Automatic Round-Robin Fixture Generation ---
+
+
+@router.post(
+    "/{tournament_id}/generate-schedule",
+    response_model=GenerateScheduleResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def generate_schedule(
+    tournament_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> GenerateScheduleResponse:
+    """Admin only: Generate round-robin tournament fixtures with automatic conflict resolution."""
+    return scheduler_service.generate_round_robin_schedule(
+        db=db, tournament_id=tournament_id
     )

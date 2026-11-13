@@ -18,6 +18,13 @@ from app.schemas.player import (
 )
 from app.schemas.user import UserCreate, UserUpdate
 from app.schemas.dashboard import DashboardSummary, ActivityItem
+from app.schemas.match import (
+    GenerateScheduleResponse,
+    MatchCreate,
+    MatchResponse,
+    MatchTransitionRequest,
+    MatchUpdate,
+)
 
 __all__ = [
     "HealthResponse",
@@ -43,4 +50,9 @@ __all__ = [
     "PlayerStatsResponse",
     "DashboardSummary",
     "ActivityItem",
+    "MatchCreate",
+    "MatchUpdate",
+    "MatchResponse",
+    "MatchTransitionRequest",
+    "GenerateScheduleResponse",
 ]

@@ -1,7 +1,9 @@
 """Application business logic and services layer."""
 from app.services import (
     dashboard_service,
+    match_state,
     player_service,
+    scheduler_service,
     team_service,
     tournament_service,
     user_service,
@@ -15,4 +17,6 @@ __all__ = [
     "player_service",
     "user_service",
     "dashboard_service",
+    "scheduler_service",
+    "match_state",
 ]
