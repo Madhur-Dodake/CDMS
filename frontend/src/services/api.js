@@ -85,6 +85,38 @@ export const matchesService = {
   },
 };
 
+// Scoring Service
+export const scoringService = {
+  startMatch: async (matchId, payload) => {
+    const res = await apiClient.post(`/api/matches/${matchId}/start`, payload);
+    return res.data;
+  },
+  recordBall: async (matchId, payload) => {
+    const res = await apiClient.post(`/api/matches/${matchId}/ball`, payload);
+    return res.data;
+  },
+  undoBall: async (matchId) => {
+    const res = await apiClient.post(`/api/matches/${matchId}/undo`);
+    return res.data;
+  },
+  endInnings: async (matchId) => {
+    const res = await apiClient.post(`/api/matches/${matchId}/end-innings`);
+    return res.data;
+  },
+  completeMatch: async (matchId) => {
+    const res = await apiClient.post(`/api/matches/${matchId}/complete`);
+    return res.data;
+  },
+  suspendMatch: async (matchId) => {
+    const res = await apiClient.post(`/api/matches/${matchId}/suspend`);
+    return res.data;
+  },
+  resumeMatch: async (matchId) => {
+    const res = await apiClient.post(`/api/matches/${matchId}/resume`);
+    return res.data;
+  },
+};
+
 // Tournaments Service
 export const tournamentsService = {
   list: async (params = {}) => {

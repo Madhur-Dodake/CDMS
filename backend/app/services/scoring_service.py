@@ -112,6 +112,44 @@ def _ball_event_to_ball_input(e: BallEvent) -> BallInput:
     )
 
 
+def _events_to_ball_inputs(ball_events: List[BallEvent], batting_players: List[uuid.UUID]) -> List[BallInput]:
+    """Convert DB BallEvents into domain BallInputs, inferring next_batter_id for wickets if missing."""
+    ball_inputs = []
+    for idx, e in enumerate(ball_events):
+        b_in = _ball_event_to_ball_input(e)
+        if e.is_wicket and not b_in.next_batter_id:
+            next_b = None
+            if idx + 1 < len(ball_events):
+                next_e = ball_events[idx + 1]
+                remaining_id = str(e.non_striker_id) if str(e.dismissed_player_id) == str(e.striker_id) else str(e.striker_id)
+                if str(next_e.striker_id) != remaining_id:
+                    next_b = str(next_e.striker_id)
+                elif str(next_e.non_striker_id) != remaining_id:
+                    next_b = str(next_e.non_striker_id)
+            if not next_b:
+                used = {str(be.striker_id) for be in ball_events[:idx+1]} | {str(be.non_striker_id) for be in ball_events[:idx+1]}
+                for p_id in batting_players:
+                    if str(p_id) not in used:
+                        next_b = str(p_id)
+                        break
+            if not next_b:
+                next_b = str(uuid.uuid4())
+            b_in = BallInput(
+                striker_id=b_in.striker_id,
+                non_striker_id=b_in.non_striker_id,
+                bowler_id=b_in.bowler_id,
+                runs_batter=b_in.runs_batter,
+                extras_type=b_in.extras_type,
+                extras_runs=b_in.extras_runs,
+                is_wicket=b_in.is_wicket,
+                wicket_type=b_in.wicket_type,
+                dismissed_player_id=b_in.dismissed_player_id,
+                next_batter_id=next_b,
+            )
+        ball_inputs.append(b_in)
+    return ball_inputs
+
+
 def _get_or_load_session(db: Session, match_id: uuid.UUID) -> LiveMatchSession:
     """Retrieve match session from in-memory cache or rebuild from DB on cache miss."""
     if match_id in LIVE_MATCH_CACHE:
@@ -153,39 +191,7 @@ def _get_or_load_session(db: Session, match_id: uuid.UUID) -> LiveMatchSession:
     t2_players = [p.player_id for p in db.scalars(select(Player).where(Player.team_id == match.team2_id)).all()]
 
     batting_players = t1_players if innings.batting_team_id == match.team1_id else t2_players
-    ball_inputs = []
-    for idx, e in enumerate(ball_events):
-        b_in = _ball_event_to_ball_input(e)
-        if e.is_wicket and not b_in.next_batter_id:
-            next_b = None
-            if idx + 1 < len(ball_events):
-                next_e = ball_events[idx + 1]
-                remaining_id = str(e.non_striker_id) if str(e.dismissed_player_id) == str(e.striker_id) else str(e.striker_id)
-                if str(next_e.striker_id) != remaining_id:
-                    next_b = str(next_e.striker_id)
-                elif str(next_e.non_striker_id) != remaining_id:
-                    next_b = str(next_e.non_striker_id)
-            if not next_b:
-                used = {str(be.striker_id) for be in ball_events[:idx+1]} | {str(be.non_striker_id) for be in ball_events[:idx+1]}
-                for p_id in batting_players:
-                    if str(p_id) not in used:
-                        next_b = str(p_id)
-                        break
-            if not next_b:
-                next_b = str(uuid.uuid4())
-            b_in = BallInput(
-                striker_id=b_in.striker_id,
-                non_striker_id=b_in.non_striker_id,
-                bowler_id=b_in.bowler_id,
-                runs_batter=b_in.runs_batter,
-                extras_type=b_in.extras_type,
-                extras_runs=b_in.extras_runs,
-                is_wicket=b_in.is_wicket,
-                wicket_type=b_in.wicket_type,
-                dismissed_player_id=b_in.dismissed_player_id,
-                next_batter_id=next_b,
-            )
-        ball_inputs.append(b_in)
+    ball_inputs = _events_to_ball_inputs(ball_events, batting_players)
 
     # Replay all events
     striker_id = ball_inputs[0].striker_id if ball_inputs else str(t1_players[0] if t1_players else uuid.uuid4())
@@ -896,7 +902,8 @@ def undo_last_ball(
             .order_by(BallEvent.sequence_no.asc())
         ).all()
     )
-    ball_inputs = [_ball_event_to_ball_input(e) for e in remaining_events]
+    batting_players = session.team1_xi if session.batting_team_id == match.team1_id else session.team2_xi
+    ball_inputs = _events_to_ball_inputs(remaining_events, batting_players)
 
     # Replay from ball 0
     batting_xi = session.team1_xi if session.batting_team_id == match.team1_id else session.team2_xi

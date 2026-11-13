@@ -354,4 +354,41 @@ test('Frontend Architecture & Build Verification Suite', async (t) => {
     assert.ok(userPage.includes('userCreateSchema'), 'AdminUsersPage must define userCreateSchema');
     assert.ok(userPage.includes('scorer'), 'AdminUsersPage must support creating scorer');
   });
+
+  await t.test('12. Scorer Console & Live Match Scoring Specification', () => {
+    // 1. AdminScoringPage code verification
+    const scoringCode = fs.readFileSync(path.join(rootDir, 'src', 'pages', 'admin', 'AdminScoringPage.jsx'), 'utf8');
+
+    // Match setup wizard (toss winner, decision, select playing XI)
+    assert.ok(scoringCode.includes('tossWinnerId') && scoringCode.includes('tossDecision'), 'Scoring page must include toss controls');
+    assert.ok(scoringCode.includes('team1Xi') && scoringCode.includes('team2Xi'), 'Scoring page must include playing XI selection');
+    assert.ok(scoringCode.includes('handleStartMatch'), 'Scoring page must handle match start transition');
+
+    // Console headers & players
+    assert.ok(scoringCode.includes('activeStrikerId') && scoringCode.includes('activeNonStrikerId'), 'Scoring page must track striker and non-striker');
+    assert.ok(scoringCode.includes('activeBowlerId'), 'Scoring page must track bowler');
+
+    // Control buttons (0-6, Wide, No Ball, Bye, Leg Bye, Wicket, Undo, Rotate Strike)
+    assert.ok(scoringCode.includes('handleRecordRuns'), 'Scoring page must record runs 0-6');
+    assert.ok(scoringCode.includes('wide') && scoringCode.includes('no_ball'), 'Scoring page must support wide and no-ball extras');
+    assert.ok(scoringCode.includes('bye') && scoringCode.includes('leg_bye'), 'Scoring page must support bye and leg-bye extras');
+    assert.ok(scoringCode.includes('handleOpenWicket') && scoringCode.includes('wicketType'), 'Scoring page must have wicket modal');
+    assert.ok(scoringCode.includes('handleUndo'), 'Scoring page must have undo delivery control');
+    assert.ok(scoringCode.includes('handleRotateStrike'), 'Scoring page must have rotate strike control');
+    assert.ok(scoringCode.includes('isBowlerModalOpen'), 'Scoring page must have next bowler selection modal');
+
+    // Optimistic UI prevention and double-tap guarding
+    assert.ok(scoringCode.includes('isSubmitting'), 'Scoring page must disable buttons during request in flight');
+
+    // Keyboard shortcuts (0-6, W, U)
+    assert.ok(scoringCode.includes('keydown'), 'Scoring page must register keydown keyboard shortcuts');
+
+    // 2. api.js scoringService contract
+    const apiCode = fs.readFileSync(path.join(rootDir, 'src', 'services', 'api.js'), 'utf8');
+    assert.ok(apiCode.includes('scoringService'), 'api.js must export scoringService');
+    assert.ok(apiCode.includes('startMatch'), 'scoringService must export startMatch');
+    assert.ok(apiCode.includes('recordBall'), 'scoringService must export recordBall');
+    assert.ok(apiCode.includes('undoBall'), 'scoringService must export undoBall');
+    assert.ok(apiCode.includes('endInnings'), 'scoringService must export endInnings');
+  });
 });

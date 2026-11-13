@@ -71,3 +71,4 @@ def test_public_teams_and_players(client):
     assert "runs" in stats
     assert "recent_innings" in stats
     assert isinstance(stats["recent_innings"], list)
+
