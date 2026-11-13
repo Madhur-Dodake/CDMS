@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.auth import (
@@ -9,6 +9,7 @@ from app.core.auth import (
     verify_password,
 )
 from app.core.database import get_db
+from app.core.rate_limit import login_rate_limiter
 from app.models.user import User
 from app.schemas.auth import LoginRequest, TokenResponse, UserResponse
 
@@ -22,9 +23,13 @@ router = APIRouter()
 )
 def login(
     login_data: LoginRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> TokenResponse:
     """Authenticate credentials and verify selected role matches user account."""
+    # Enforce in-memory sliding window rate limit (10 attempts/min per IP)
+    login_rate_limiter.check_rate_limit(request)
+
     user = db.query(User).filter(User.email == login_data.email).first()
     if not user:
         raise HTTPException(

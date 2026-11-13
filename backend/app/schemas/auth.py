@@ -1,15 +1,15 @@
 import uuid
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from app.models.user import UserRole
 
 
 class LoginRequest(BaseModel):
     """Payload for user login with mandatory role selection."""
 
-    email: EmailStr
-    password: str
+    email: EmailStr = Field(..., max_length=100)
+    password: str = Field(..., min_length=1, max_length=128)
     role: UserRole
 
 

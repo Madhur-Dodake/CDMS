@@ -1,11 +1,16 @@
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
-from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.logging_middleware import RequestLoggingMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.api.auth import router as auth_router
 from app.api.dashboard import router as dashboard_router
 from app.api.health import router as health_router
@@ -20,20 +25,64 @@ from app.schemas.health import HealthResponse
 from app.services import scoring_service
 from app.ws.connection_manager import manager
 
+logger = logging.getLogger("cdms.error")
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description="Cricket Data Management System (CDMS) Backend API",
 )
 
-# CORS configuration
+# 1. Security Headers Middleware (OWASP protection)
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 2. Structured Request Logging Middleware
+app.add_middleware(RequestLoggingMiddleware)
+
+# 3. CORS Configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["X-Process-Time"],
 )
+
+
+# Global Exception Handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Format Pydantic schema validation failures with clean messages."""
+    errors = []
+    for err in exc.errors():
+        field_path = " -> ".join(str(loc) for loc in err.get("loc", []))
+        errors.append(f"{field_path}: {err.get('msg')}")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": "; ".join(errors), "error_code": "VALIDATION_ERROR"},
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Standardize HTTP exception responses."""
+    headers = exc.headers or {}
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=headers,
+    )
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all unhandled exception handler: prevents stack trace leakage."""
+    logger.error(f"Unhandled Exception on {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal server error. Please try again later.", "error_code": "INTERNAL_SERVER_ERROR"},
+    )
 
 # Register API routers
 app.include_router(health_router, prefix="/api", tags=["Health"])

@@ -19,10 +19,10 @@ class BallRequest(BaseModel):
     non_striker_id: uuid.UUID
     bowler_id: uuid.UUID
     runs_batter: int = Field(0, ge=0, le=6)
-    extras_type: Optional[str] = None  # "wide", "no_ball", "bye", "leg_bye", "penalty", None
+    extras_type: Optional[str] = Field(None, max_length=20)  # "wide", "no_ball", "bye", "leg_bye", "penalty", None
     extras_runs: int = Field(0, ge=0)
     is_wicket: bool = False
-    wicket_type: Optional[str] = None
+    wicket_type: Optional[str] = Field(None, max_length=30)
     dismissed_player_id: Optional[uuid.UUID] = None
     next_batter_id: Optional[uuid.UUID] = None
 

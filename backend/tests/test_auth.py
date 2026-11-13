@@ -297,3 +297,31 @@ def test_viewer_hitting_scorer_or_admin_route_returns_403(client: TestClient) ->
     )
     assert response.status_code == 403
     assert response.json()["detail"] == "Scorer or Admin access required"
+
+
+# 19. Security headers test
+def test_security_headers_present(client: TestClient) -> None:
+    """Case 19: Verify OWASP-recommended security headers are set on responses."""
+    response = client.get("/health")
+    assert response.headers.get("X-Content-Type-Options") == "nosniff"
+    assert response.headers.get("X-Frame-Options") == "DENY"
+    assert response.headers.get("X-XSS-Protection") == "1; mode=block"
+    assert response.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+
+
+# 20. Rate limiting enforcement test
+def test_login_rate_limiting_enforcement() -> None:
+    """Case 20: Verify rate limiter throws HTTP 429 when threshold exceeded."""
+    from unittest.mock import MagicMock
+    from fastapi import HTTPException, Request
+    from app.core.rate_limit import InMemoryRateLimiter
+
+    limiter = InMemoryRateLimiter(requests_per_minute=2, window_seconds=60)
+    mock_request = MagicMock(spec=Request)
+    mock_request.headers.get.return_value = "192.168.1.100"
+    limiter.check_rate_limit(mock_request)
+    limiter.check_rate_limit(mock_request)
+    with pytest.raises(HTTPException) as exc_info:
+        limiter.check_rate_limit(mock_request)
+    assert exc_info.value.status_code == 429
+    assert "Rate limit exceeded" in exc_info.value.detail

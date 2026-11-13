@@ -1,25 +1,74 @@
 version: '3.8'
 
 services:
-  postgres:
+  # 1. PostgreSQL Database Service
+  db:
     image: postgres:16-alpine
-    container_name: cdms_postgres
+    container_name: cdms_db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: cdms_user
-      POSTGRES_PASSWORD: cdms_password
-      POSTGRES_DB: cdms_db
+      POSTGRES_USER: ${POSTGRES_USER:-cdms_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cdms_password}
+      POSTGRES_DB: ${POSTGRES_DB:-cdms_db}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cdms_user -d cdms_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cdms_user} -d ${POSTGRES_DB:-cdms_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  # 2. FastAPI Backend Application Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cdms_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_SERVER: db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-cdms_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cdms_password}
+      POSTGRES_DB: ${POSTGRES_DB:-cdms_db}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-cdms_user}:${POSTGRES_PASSWORD:-cdms_password}@db:5432/${POSTGRES_DB:-cdms_db}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-cdms-production-secure-secret-key-replace-me-1234567890}
+      JWT_ALGORITHM: HS256
+      ENVIRONMENT: production
+      DEBUG: "False"
+      BACKEND_CORS_ORIGINS: "http://localhost,http://localhost:80,http://localhost:5173,http://localhost:3000"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # 3. React Frontend + Nginx Web Server
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cdms_frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "5173:80"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
 volumes:
   postgres_data:
     driver: local
-
