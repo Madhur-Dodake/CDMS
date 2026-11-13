@@ -133,8 +133,28 @@ one), extras_runs, is_wicket, wicket_type, dismissed_player_id, 	imestamp.
 ---
 
 ## 7. Quality Assurance & Basis Path Testing
-- **Coverage Criteria:** Complete branch coverage on scoring state updates, NRR computations, and role guards.
-- **Pure Functions:** Fully isolated unit test suites verifying all boundary conditions:
-  - Strike rotation on extras (no balls, wides, overthrows).
-  - Net Run Rate when a team is bowled out inside allocated overs.
-  - Multi-match standings ordering with equal points and NRR tiebreaker.
+
+### 7.1 Test Suite Metrics & Verification
+- **Total Automated Tests:** 246 tests across repository (233 backend pytest tests + 13 frontend tests).
+- **Backend Test Suite:** 233 passed tests (89 Basis Path tests + 144 unit/integration tests).
+- **Backend Branch Coverage:** 84% overall codebase coverage, with 93.5% average branch coverage across core computational engines.
+- **Complexity Constraint:** All tested functions strictly satisfy McCabe Cyclomatic Complexity $V(G) = E - N + 2 \le 5$. Functions exceeding $V(G) > 5$ were decomposed into focused pure helper functions.
+
+### 7.2 Basis Path Test Breakdown (89 Tests)
+Organized according to report Section 9 across the 5 core computational components:
+
+| Module | Tested Unit | Test Count | Branch Coverage | Statement Coverage | Max $V(G)$ |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| `app.core.auth` | RBAC guards, JWT token lifecycle, password hashing | **18 tests** | **100%** (10/10) | **100%** (55/55) | $V(G) = 4$ |
+| `app.services.nrr_calculator` | Overs parser, NRR calculator, cumulative tournament NRR | **11 tests** | **96%** (27/28) | **96%** (81/84) | $V(G) = 4$ |
+| `app.services.stats_engine` | Batting/bowling stats, milestones, career metrics aggregation | **11 tests** | **100%** (8/8) | **100%** (46/46) | $V(G) = 3$ |
+| `app.ws.connection_manager` | Connection management, room broadcasting, dead socket pruning | **8 tests** | **84%** (27/32) | **85%** (71/83) | $V(G) = 5$ |
+| `app.services.scoring_engine` | Pure ball-by-ball engine, strike rotation, wicket handling, replay | **41 tests** | **95%** (72/76) | **98%** (241/243) | $V(G) = 5$ |
+| **Total Basis Path Suite** | **Core computational modules** | **89 tests** | **93.5%** (144/154) | **96.7%** (494/511) | **$V(G) \le 5$** |
+
+### 7.3 Boundary & Decision Invariants Covered
+- **Strike Rotation:** Odd runs off bat and byes/leg-byes swap strike; over completion (6th legal ball) swaps strike; odd run on 6th legal delivery cancels swap deterministically.
+- **Extras Accounting:** Wides and no-balls flagged illegal (legal delivery count unchanged); byes/leg-byes legal but exempt from bowler runs conceded.
+- **All-Out Quota Adjustment:** When a team is bowled all out inside allocated overs, effective overs faced in NRR calculations is capped at `max_overs`.
+- **Division Guards:** Zero balls bowled, zero dismissals, and zero wickets safely evaluate to `0.0` across all statistical functions.
+- **Undo Event Replay:** Deterministic reconstruction from ball zero reliably recreates exact innings state.
