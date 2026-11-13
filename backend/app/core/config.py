@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     @classmethod
     def assemble_db_connection(cls, v: Union[str, None], info) -> str:
         if isinstance(v, str) and v.strip():
+            if v.startswith("postgresql://"):
+                return v.replace("postgresql://", "postgresql+psycopg2://", 1)
             return v
         data = info.data
         user = data.get("POSTGRES_USER", "cdms_user")
@@ -35,7 +37,7 @@ class Settings(BaseSettings):
         server = data.get("POSTGRES_SERVER", "localhost")
         port = data.get("POSTGRES_PORT", 5432)
         db = data.get("POSTGRES_DB", "cdms_db")
-        return f"postgresql://{user}:{password}@{server}:{port}/{db}"
+        return f"postgresql+psycopg2://{user}:{password}@{server}:{port}/{db}"
 
     model_config = SettingsConfigDict(
         env_file=".env",
