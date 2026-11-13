@@ -1,36 +1,87 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+
+// Layouts & Guard
+import PublicLayout from './layouts/PublicLayout';
+import AdminLayout from './layouts/AdminLayout';
+import ProtectedRoute from './components/ProtectedRoute';
+
+// Public Pages
 import HomePage from './pages/HomePage';
+import TournamentsPage from './pages/TournamentsPage';
+import TournamentStandingsPage from './pages/TournamentStandingsPage';
+import TeamsPage from './pages/TeamsPage';
+import PlayersPage from './pages/PlayersPage';
+import LiveScoresPage from './pages/LiveScoresPage';
+import MatchScorecardPage from './pages/MatchScorecardPage';
+import LoginPage from './pages/LoginPage';
+import ForbiddenPage from './pages/ForbiddenPage';
+import NotFoundPage from './pages/NotFoundPage';
+
+// Admin Pages
+import AdminDashboardPage from './pages/admin/AdminDashboardPage';
+import AdminTournamentsPage from './pages/admin/AdminTournamentsPage';
+import AdminTeamsPage from './pages/admin/AdminTeamsPage';
+import AdminPlayersPage from './pages/admin/AdminPlayersPage';
+import AdminVenuesPage from './pages/admin/AdminVenuesPage';
+import AdminMatchesPage from './pages/admin/AdminMatchesPage';
+import AdminScoringPage from './pages/admin/AdminScoringPage';
+import AdminPointsTablePage from './pages/admin/AdminPointsTablePage';
+import AdminStatsPage from './pages/admin/AdminStatsPage';
+import AdminUsersPage from './pages/admin/AdminUsersPage';
+import AdminReportsPage from './pages/admin/AdminReportsPage';
 
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
-        <nav className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50">
-          <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-            <Link to="/" className="text-xl font-bold tracking-tight text-emerald-400 hover:text-emerald-300">
-              CDMS
-            </Link>
-            <div className="flex items-center space-x-6 text-sm font-medium text-slate-300">
-              <Link to="/" className="hover:text-white transition">Home</Link>
-              <span className="text-xs px-2.5 py-1 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                v0.1.0 (Scaffold)
-              </span>
-            </div>
-          </div>
-        </nav>
+      <Routes>
+        {/* Public Routes with Top Nav */}
+        <Route element={<PublicLayout />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/tournaments" element={<TournamentsPage />} />
+          <Route path="/tournaments/:id/standings" element={<TournamentStandingsPage />} />
+          <Route path="/teams" element={<TeamsPage />} />
+          <Route path="/players" element={<PlayersPage />} />
+          <Route path="/live-scores" element={<LiveScoresPage />} />
+          <Route path="/live" element={<Navigate to="/live-scores" replace />} />
+          <Route path="/matches/:id" element={<MatchScorecardPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/forbidden" element={<ForbiddenPage />} />
+        </Route>
 
-        <main className="flex-1">
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-          </Routes>
-        </main>
+        {/* Protected Admin & Scorer Routes with Dark Sidebar */}
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'scorer']}>
+              <AdminLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="dashboard" element={<AdminDashboardPage />} />
+          <Route path="tournaments" element={<AdminTournamentsPage />} />
+          <Route path="teams" element={<AdminTeamsPage />} />
+          <Route path="players" element={<AdminPlayersPage />} />
+          <Route path="venues" element={<AdminVenuesPage />} />
+          <Route path="matches" element={<AdminMatchesPage />} />
+          <Route path="scoring" element={<AdminScoringPage />} />
+          <Route path="points-table" element={<AdminPointsTablePage />} />
+          <Route path="stats" element={<AdminStatsPage />} />
+          <Route
+            path="users"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminUsersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="reports" element={<AdminReportsPage />} />
+        </Route>
 
-        <footer className="border-t border-slate-800 py-6 text-center text-xs text-slate-500">
-          Cricket Data Management System &copy; 2026. Academic SE Lab Project.
-        </footer>
-      </div>
+        {/* Catch-all 404 Not Found */}
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
     </BrowserRouter>
   );
 }
-
