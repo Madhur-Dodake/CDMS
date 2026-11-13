@@ -1,0 +1,106 @@
+name: CDMS Continuous Integration (CI)
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  # =========================================================================
+  # 1. Backend Pytest & Branch Coverage
+  # =========================================================================
+  backend-ci:
+    name: Backend Test Suite & Coverage
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cdms_user
+          POSTGRES_PASSWORD: cdms_password
+          POSTGRES_DB: cdms_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Alembic migrations
+        env:
+          DATABASE_URL: postgresql+psycopg2://cdms_user:cdms_password@localhost:5432/cdms_db
+          POSTGRES_SERVER: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: cdms_user
+          POSTGRES_PASSWORD: cdms_password
+          POSTGRES_DB: cdms_db
+          JWT_SECRET_KEY: test-ci-secret-key-1234567890
+        run: |
+          alembic upgrade head
+
+      - name: Run Pytest with branch coverage
+        env:
+          DATABASE_URL: postgresql+psycopg2://cdms_user:cdms_password@localhost:5432/cdms_db
+          POSTGRES_SERVER: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: cdms_user
+          POSTGRES_PASSWORD: cdms_password
+          POSTGRES_DB: cdms_db
+          JWT_SECRET_KEY: test-ci-secret-key-1234567890
+          ENVIRONMENT: testing
+        run: |
+          pytest -v --cov=app --cov-branch --cov-report=term-missing
+
+  # =========================================================================
+  # 2. Frontend Test Suite & Production Build
+  # =========================================================================
+  frontend-ci:
+    name: Frontend Test Suite & Vite Build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit & layout tests
+        run: npm test
+
+      - name: Build production bundle with Vite
+        run: npm run build
