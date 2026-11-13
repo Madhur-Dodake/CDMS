@@ -4,6 +4,7 @@ from app.services import (
     match_state,
     player_service,
     scheduler_service,
+    scoring_engine,
     team_service,
     tournament_service,
     user_service,
@@ -19,4 +20,5 @@ __all__ = [
     "dashboard_service",
     "scheduler_service",
     "match_state",
+    "scoring_engine",
 ]
