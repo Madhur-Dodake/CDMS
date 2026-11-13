@@ -47,6 +47,35 @@ def get_match(
     return scheduler_service.get_match_by_id(db=db, match_id=match_id)
 
 
+@router.get("/{match_id}/live")
+def get_match_live_state(
+    match_id: uuid.UUID,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Public: Get real-time match state snapshot for polling fallback."""
+    from fastapi import HTTPException
+    from app.services import scoring_service
+
+    snapshot = scoring_service.get_match_snapshot(db, match_id)
+    if snapshot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Match live state not found",
+        )
+    return snapshot
+
+
+@router.get("/{match_id}/scorecard")
+def get_match_scorecard(
+    match_id: uuid.UUID,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Public: Comprehensive match scorecard including innings, batters, bowlers, and fall of wickets."""
+    from app.services import scoring_service
+
+    return scoring_service.get_full_scorecard(db, match_id)
+
+
 @router.post("", response_model=MatchResponse, status_code=status.HTTP_201_CREATED)
 def schedule_match(
     match_in: MatchCreate,

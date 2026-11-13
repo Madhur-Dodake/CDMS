@@ -49,4 +49,80 @@ export const authService = {
   },
 };
 
+// Matches & Live Scoring Service
+export const matchesService = {
+  list: async (params = {}) => {
+    const res = await apiClient.get('/api/matches', { params });
+    return res.data;
+  },
+  getById: async (matchId) => {
+    const res = await apiClient.get(`/api/matches/${matchId}`);
+    return res.data;
+  },
+  getLiveState: async (matchId) => {
+    const res = await apiClient.get(`/api/matches/${matchId}/live`);
+    return res.data;
+  },
+  getScorecard: async (matchId) => {
+    const res = await apiClient.get(`/api/matches/${matchId}/scorecard`);
+    return res.data;
+  },
+};
+
+// Tournaments Service
+export const tournamentsService = {
+  list: async (params = {}) => {
+    const res = await apiClient.get('/api/tournaments', { params });
+    return res.data;
+  },
+  getById: async (tournamentId) => {
+    const res = await apiClient.get(`/api/tournaments/${tournamentId}`);
+    return res.data;
+  },
+  getPointsTable: async (tournamentId) => {
+    const res = await apiClient.get(`/api/tournaments/${tournamentId}/points-table`);
+    return res.data;
+  },
+  getTeams: async (tournamentId) => {
+    const res = await apiClient.get(`/api/tournaments/${tournamentId}/teams`);
+    return res.data;
+  },
+  getFixtures: async (tournamentId) => {
+    const res = await apiClient.get('/api/matches', { params: { tournament_id: tournamentId, page_size: 50 } });
+    return res.data;
+  },
+};
+
+// Teams Service
+export const teamsService = {
+  list: async (params = {}) => {
+    const res = await apiClient.get('/api/teams', { params });
+    return res.data;
+  },
+  getById: async (teamId) => {
+    const res = await apiClient.get(`/api/teams/${teamId}`);
+    return res.data;
+  },
+  getRoster: async (teamId) => {
+    const res = await apiClient.get('/api/players', { params: { team_id: teamId, page_size: 50 } });
+    return res.data;
+  },
+};
+
+// Players Service
+export const playersService = {
+  list: async (params = {}) => {
+    const res = await apiClient.get('/api/players', { params });
+    return res.data;
+  },
+  getById: async (playerId) => {
+    const res = await apiClient.get(`/api/players/${playerId}`);
+    return res.data;
+  },
+  getStats: async (playerId) => {
+    const res = await apiClient.get(`/api/players/${playerId}/stats`);
+    return res.data;
+  },
+};
+
 export default apiClient;

@@ -152,20 +152,68 @@ def _get_or_load_session(db: Session, match_id: uuid.UUID) -> LiveMatchSession:
     t1_players = [p.player_id for p in db.scalars(select(Player).where(Player.team_id == match.team1_id)).all()]
     t2_players = [p.player_id for p in db.scalars(select(Player).where(Player.team_id == match.team2_id)).all()]
 
-    ball_inputs = [_ball_event_to_ball_input(e) for e in ball_events]
+    batting_players = t1_players if innings.batting_team_id == match.team1_id else t2_players
+    ball_inputs = []
+    for idx, e in enumerate(ball_events):
+        b_in = _ball_event_to_ball_input(e)
+        if e.is_wicket and not b_in.next_batter_id:
+            next_b = None
+            if idx + 1 < len(ball_events):
+                next_e = ball_events[idx + 1]
+                remaining_id = str(e.non_striker_id) if str(e.dismissed_player_id) == str(e.striker_id) else str(e.striker_id)
+                if str(next_e.striker_id) != remaining_id:
+                    next_b = str(next_e.striker_id)
+                elif str(next_e.non_striker_id) != remaining_id:
+                    next_b = str(next_e.non_striker_id)
+            if not next_b:
+                used = {str(be.striker_id) for be in ball_events[:idx+1]} | {str(be.non_striker_id) for be in ball_events[:idx+1]}
+                for p_id in batting_players:
+                    if str(p_id) not in used:
+                        next_b = str(p_id)
+                        break
+            if not next_b:
+                next_b = str(uuid.uuid4())
+            b_in = BallInput(
+                striker_id=b_in.striker_id,
+                non_striker_id=b_in.non_striker_id,
+                bowler_id=b_in.bowler_id,
+                runs_batter=b_in.runs_batter,
+                extras_type=b_in.extras_type,
+                extras_runs=b_in.extras_runs,
+                is_wicket=b_in.is_wicket,
+                wicket_type=b_in.wicket_type,
+                dismissed_player_id=b_in.dismissed_player_id,
+                next_batter_id=next_b,
+            )
+        ball_inputs.append(b_in)
 
     # Replay all events
     striker_id = ball_inputs[0].striker_id if ball_inputs else str(t1_players[0] if t1_players else uuid.uuid4())
     non_striker_id = ball_inputs[0].non_striker_id if ball_inputs else str(t1_players[1] if len(t1_players) > 1 else uuid.uuid4())
 
-    state = replay(
-        events=ball_inputs,
-        max_overs=match.overs,
-        target_runs=innings.target_runs,
-        striker_id=striker_id,
-        non_striker_id=non_striker_id,
-        innings_no=innings.innings_no,
-    )
+    try:
+        state = replay(
+            events=ball_inputs,
+            max_overs=match.overs,
+            target_runs=innings.target_runs,
+            striker_id=striker_id,
+            non_striker_id=non_striker_id,
+            innings_no=innings.innings_no,
+        )
+    except Exception:
+        # Fallback to DB totals if replay encounters mismatch
+        state = InningsState(
+            innings_no=innings.innings_no,
+            max_overs=match.overs,
+            target_runs=innings.target_runs,
+            total_runs=innings.total_runs,
+            wickets=innings.wickets,
+            legal_balls=innings.balls_bowled,
+            striker_id=str(ball_events[-1].striker_id) if ball_events else striker_id,
+            non_striker_id=str(ball_events[-1].non_striker_id) if ball_events else non_striker_id,
+            current_bowler_id=str(ball_events[-1].bowler_id) if ball_events else None,
+            recent_balls=[str(b.runs_scored) for b in ball_events[-6:]] if ball_events else [],
+        )
 
     # Previous over bowler
     previous_over_bowler = None
@@ -329,6 +377,241 @@ def broadcast_match_state(db: Session, match: Match, state: Optional[InningsStat
     """Broadcast current match snapshot to all WebSocket viewers."""
     payload = build_broadcast_payload(match, state)
     manager.broadcast_sync(str(match.match_id), payload)
+
+
+def get_full_scorecard(db: Session, match_id: uuid.UUID) -> dict:
+    """Public: Full comprehensive match scorecard including innings, batters, bowlers, and fall of wickets."""
+    match = db.get(Match, match_id)
+    if not match:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Match with id '{match_id}' not found",
+        )
+
+    t1_name = match.team1.team_name if match.team1 else "Team 1"
+    t1_code = match.team1.short_code if match.team1 else "T1"
+    t2_name = match.team2.team_name if match.team2 else "Team 2"
+    t2_code = match.team2.short_code if match.team2 else "T2"
+    v_name = match.venue.venue_name if match.venue else "Standard Stadium"
+    v_city = match.venue.city if match.venue else "Metropolis"
+    tourney_name = match.tournament.name if match.tournament else "Premier League"
+
+    innings_list = (
+        db.query(Innings)
+        .filter(Innings.match_id == match_id)
+        .order_by(Innings.innings_no.asc())
+        .all()
+    )
+
+    innings_data = []
+    for inn in innings_list:
+        batting_name = inn.batting_team.team_name if inn.batting_team else "Batting Team"
+        bowling_name = inn.bowling_team.team_name if inn.bowling_team else "Bowling Team"
+
+        events = (
+            db.query(BallEvent)
+            .filter(BallEvent.innings_id == inn.innings_id)
+            .order_by(BallEvent.sequence_no.asc())
+            .all()
+        )
+
+        batters_stats = {}
+        bowlers_stats = {}
+        extras = {"wides": 0, "no_balls": 0, "byes": 0, "leg_byes": 0, "penalties": 0, "total": 0}
+        fow = []
+        running_score = 0
+
+        for be in events:
+            s_id = str(be.striker_id)
+            if s_id not in batters_stats:
+                p = db.get(Player, be.striker_id)
+                batters_stats[s_id] = {
+                    "player_id": s_id,
+                    "name": p.name if p else f"Player {s_id[:8]}",
+                    "runs": 0,
+                    "balls": 0,
+                    "fours": 0,
+                    "sixes": 0,
+                    "strike_rate": 0.0,
+                    "dismissal": "not out",
+                }
+
+            ns_id = str(be.non_striker_id)
+            if ns_id not in batters_stats:
+                p = db.get(Player, be.non_striker_id)
+                batters_stats[ns_id] = {
+                    "player_id": ns_id,
+                    "name": p.name if p else f"Player {ns_id[:8]}",
+                    "runs": 0,
+                    "balls": 0,
+                    "fours": 0,
+                    "sixes": 0,
+                    "strike_rate": 0.0,
+                    "dismissal": "not out",
+                }
+
+            is_wide = be.extras_type == ExtrasType.WIDE
+            is_bye = be.extras_type in (ExtrasType.BYE, ExtrasType.LEG_BYE)
+
+            if not is_wide and not is_bye:
+                batters_stats[s_id]["runs"] += be.runs_scored
+                if be.runs_scored == 4:
+                    batters_stats[s_id]["fours"] += 1
+                elif be.runs_scored == 6:
+                    batters_stats[s_id]["sixes"] += 1
+
+            if not is_wide:
+                batters_stats[s_id]["balls"] += 1
+
+            if be.extras_type == ExtrasType.WIDE:
+                extras["wides"] += be.extras_runs
+                extras["total"] += be.extras_runs
+                running_score += be.extras_runs
+            elif be.extras_type == ExtrasType.NO_BALL:
+                extras["no_balls"] += be.extras_runs
+                extras["total"] += be.extras_runs
+                running_score += (be.runs_scored + be.extras_runs)
+            elif be.extras_type in (ExtrasType.BYE, ExtrasType.LEG_BYE):
+                if be.extras_type == ExtrasType.BYE:
+                    extras["byes"] += be.extras_runs
+                else:
+                    extras["leg_byes"] += be.extras_runs
+                extras["total"] += be.extras_runs
+                running_score += be.extras_runs
+            else:
+                running_score += be.runs_scored
+
+            b_id = str(be.bowler_id)
+            if b_id not in bowlers_stats:
+                bp = db.get(Player, be.bowler_id)
+                bowlers_stats[b_id] = {
+                    "player_id": b_id,
+                    "name": bp.name if bp else f"Bowler {b_id[:8]}",
+                    "legal_balls": 0,
+                    "runs_conceded": 0,
+                    "wickets": 0,
+                    "maidens": 0,
+                }
+
+            if be.is_legal:
+                bowlers_stats[b_id]["legal_balls"] += 1
+
+            if be.extras_type in (ExtrasType.WIDE, ExtrasType.NO_BALL):
+                bowlers_stats[b_id]["runs_conceded"] += (be.runs_scored + be.extras_runs)
+            elif be.extras_type == ExtrasType.NONE:
+                bowlers_stats[b_id]["runs_conceded"] += be.runs_scored
+
+            if be.is_wicket:
+                d_id = str(be.dismissed_player_id) if be.dismissed_player_id else s_id
+                dp = db.get(Player, be.dismissed_player_id) if be.dismissed_player_id else None
+                dp_name = dp.name if dp else (batters_stats.get(d_id, {}).get("name", "Batter"))
+
+                bowler_p = db.get(Player, be.bowler_id)
+                bowler_name = bowler_p.name if bowler_p else "Bowler"
+
+                w_type_str = be.wicket_type.value if hasattr(be.wicket_type, "value") else str(be.wicket_type)
+                if w_type_str == "bowled":
+                    dis_text = f"b {bowler_name}"
+                elif w_type_str == "caught":
+                    dis_text = f"c Field b {bowler_name}"
+                elif w_type_str == "lbw":
+                    dis_text = f"lbw b {bowler_name}"
+                elif w_type_str == "run_out":
+                    dis_text = "run out"
+                elif w_type_str == "stumped":
+                    dis_text = f"st b {bowler_name}"
+                elif w_type_str == "hit_wicket":
+                    dis_text = f"hit wicket b {bowler_name}"
+                else:
+                    dis_text = f"out ({w_type_str})"
+
+                if d_id in batters_stats:
+                    batters_stats[d_id]["dismissal"] = dis_text
+                else:
+                    batters_stats[d_id] = {
+                        "player_id": d_id,
+                        "name": dp_name,
+                        "runs": 0,
+                        "balls": 0,
+                        "fours": 0,
+                        "sixes": 0,
+                        "strike_rate": 0.0,
+                        "dismissal": dis_text,
+                    }
+
+                if w_type_str != "run_out":
+                    bowlers_stats[b_id]["wickets"] += 1
+
+                ov_str = f"{be.over_no}.{be.ball_no}"
+                fow.append({
+                    "wicket_number": len(fow) + 1,
+                    "score": running_score,
+                    "overs": ov_str,
+                    "player_name": dp_name,
+                })
+
+        batters_list = []
+        for b in batters_stats.values():
+            sr = round((b["runs"] / b["balls"] * 100), 2) if b["balls"] > 0 else 0.0
+            b["strike_rate"] = sr
+            batters_list.append(b)
+
+        bowlers_list = []
+        for b in bowlers_stats.values():
+            legal = b["legal_balls"]
+            ov_disp = f"{legal // 6}.{legal % 6}"
+            dec_ov = (legal // 6) + (legal % 6) / 6.0
+            econ = round(b["runs_conceded"] / dec_ov, 2) if dec_ov > 0 else 0.0
+            b["overs"] = ov_disp
+            b["economy"] = econ
+            bowlers_list.append(b)
+
+        innings_data.append({
+            "innings_no": inn.innings_no,
+            "batting_team": batting_name,
+            "bowling_team": bowling_name,
+            "runs": inn.total_runs,
+            "wickets": inn.wickets,
+            "overs": overs_display(inn.balls_bowled),
+            "target": inn.target_runs,
+            "is_completed": inn.is_completed,
+            "batters": batters_list,
+            "bowlers": bowlers_list,
+            "extras": extras,
+            "fall_of_wickets": fow,
+        })
+
+    live_snapshot = get_match_snapshot(db, match_id)
+    if live_snapshot:
+        for role_key, name_key in [("striker", "striker_name"), ("non_striker", "non_striker_name"), ("bowler", "bowler_name")]:
+            p_id = live_snapshot.get(role_key)
+            if p_id:
+                try:
+                    p = db.get(Player, uuid.UUID(str(p_id)))
+                    live_snapshot[name_key] = p.name if p else str(p_id)[:8]
+                except Exception:
+                    live_snapshot[name_key] = str(p_id)
+            else:
+                live_snapshot[name_key] = None
+
+    return {
+        "match_id": str(match.match_id),
+        "status": match.status.value if hasattr(match.status, "value") else str(match.status),
+        "tournament_id": str(match.tournament_id),
+        "tournament_name": tourney_name,
+        "team1": {"id": str(match.team1_id), "name": t1_name, "code": t1_code},
+        "team2": {"id": str(match.team2_id), "name": t2_name, "code": t2_code},
+        "venue": v_name,
+        "city": v_city,
+        "match_date": match.match_date.isoformat(),
+        "overs": match.overs,
+        "toss_winner_id": str(match.toss_winner_id) if match.toss_winner_id else None,
+        "toss_decision": match.toss_decision.value if match.toss_decision else None,
+        "winner_id": str(match.winner_id) if match.winner_id else None,
+        "result_summary": match.result_summary,
+        "live": live_snapshot,
+        "innings": innings_data,
+    }
 
 
 # -------------------------------------------------------------
