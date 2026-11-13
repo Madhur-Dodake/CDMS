@@ -4,6 +4,7 @@ from app.api.dashboard import router as dashboard_router
 from app.api.health import router as health_router
 from app.api.matches import router as matches_router
 from app.api.players import router as players_router
+from app.api.scoring import router as scoring_router
 from app.api.teams import router as teams_router
 from app.api.tournaments import router as tournaments_router
 from app.api.users import router as users_router
@@ -19,4 +20,5 @@ __all__ = [
     "users_router",
     "dashboard_router",
     "matches_router",
+    "scoring_router",
 ]

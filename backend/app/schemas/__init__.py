@@ -25,6 +25,11 @@ from app.schemas.match import (
     MatchTransitionRequest,
     MatchUpdate,
 )
+from app.schemas.scoring import (
+    BallRequest,
+    MatchStartRequest,
+    ScoringStateResponse,
+)
 
 __all__ = [
     "HealthResponse",
@@ -55,4 +60,7 @@ __all__ = [
     "MatchResponse",
     "MatchTransitionRequest",
     "GenerateScheduleResponse",
+    "MatchStartRequest",
+    "BallRequest",
+    "ScoringStateResponse",
 ]

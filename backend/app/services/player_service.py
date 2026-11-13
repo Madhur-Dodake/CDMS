@@ -93,6 +93,12 @@ def get_player_by_id(db: Session, player_id: uuid.UUID) -> PlayerResponse:
             detail=f"Player with id '{player_id}' not found",
         )
 
+    stats_response = (
+        PlayerStatsResponse.model_validate(player.stats)
+        if player.stats
+        else PlayerStatsResponse(player_id=player.player_id)
+    )
+
     return PlayerResponse(
         player_id=player.player_id,
         name=player.name,
@@ -103,7 +109,7 @@ def get_player_by_id(db: Session, player_id: uuid.UUID) -> PlayerResponse:
         role=player.role,
         created_at=player.created_at,
         team_name=player.team.team_name if player.team else None,
-        stats=PlayerStatsResponse.model_validate(player.stats) if player.stats else None,
+        stats=stats_response,
     )
 
 
@@ -179,6 +185,12 @@ def update_player(
     db.commit()
     db.refresh(player)
 
+    stats_response = (
+        PlayerStatsResponse.model_validate(player.stats)
+        if player.stats
+        else PlayerStatsResponse(player_id=player.player_id)
+    )
+
     return PlayerResponse(
         player_id=player.player_id,
         name=player.name,
@@ -189,7 +201,7 @@ def update_player(
         role=player.role,
         created_at=player.created_at,
         team_name=player.team.team_name if player.team else None,
-        stats=PlayerStatsResponse.model_validate(player.stats) if player.stats else None,
+        stats=stats_response,
     )
 
 
