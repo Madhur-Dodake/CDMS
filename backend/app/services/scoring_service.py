@@ -809,27 +809,9 @@ def _compute_and_save_result(db: Session, match: Match) -> None:
         match.winner_id = None
         match.result_summary = "Match tied"
 
-    # Update Points Table for tournament
-    if match.tournament_id:
-        p1 = db.scalar(select(PointsTable).where(PointsTable.tournament_id == match.tournament_id, PointsTable.team_id == i1.batting_team_id))
-        p2 = db.scalar(select(PointsTable).where(PointsTable.tournament_id == match.tournament_id, PointsTable.team_id == i2.batting_team_id))
-
-        if p1 and p2:
-            p1.played += 1
-            p2.played += 1
-            if match.winner_id == i1.batting_team_id:
-                p1.won += 1
-                p1.points += 2
-                p2.lost += 1
-            elif match.winner_id == i2.batting_team_id:
-                p2.won += 1
-                p2.points += 2
-                p1.lost += 1
-            else:
-                p1.tied += 1
-                p2.tied += 1
-                p1.points += 1
-                p2.points += 1
+    # Single-transaction post-match processing (player_stats and tournament points table with cumulative NRR)
+    from app.services.post_match_service import process_completed_match
+    process_completed_match(db, match.match_id)
 
 
 def suspend_match(

@@ -5,16 +5,18 @@ from app.schemas.common import PaginatedResponse
 from app.schemas.venue import VenueCreate, VenueUpdate, VenueResponse
 from app.schemas.team import TeamCreate, TeamUpdate, TeamResponse
 from app.schemas.tournament import (
+    PointsTableRowResponse,
     TournamentCreate,
-    TournamentUpdate,
     TournamentResponse,
     TournamentTeamRegister,
+    TournamentUpdate,
 )
 from app.schemas.player import (
+    PlayerCareerDetailedStatsResponse,
     PlayerCreate,
-    PlayerUpdate,
     PlayerResponse,
     PlayerStatsResponse,
+    PlayerUpdate,
 )
 from app.schemas.user import UserCreate, UserUpdate
 from app.schemas.dashboard import DashboardSummary, ActivityItem
@@ -63,4 +65,6 @@ __all__ = [
     "MatchStartRequest",
     "BallRequest",
     "ScoringStateResponse",
+    "PointsTableRowResponse",
+    "PlayerCareerDetailedStatsResponse",
 ]

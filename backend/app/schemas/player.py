@@ -14,6 +14,29 @@ class PlayerStatsResponse(BaseModel):
     overs_bowled: Decimal = Decimal("0.0")
     strike_rate: Decimal = Decimal("0.00")
     economy: Decimal = Decimal("0.00")
+    batting_average: Optional[float] = 0.0
+    bowling_average: Optional[float] = 0.0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PlayerCareerDetailedStatsResponse(BaseModel):
+    player_id: uuid.UUID
+    name: str
+    team_id: Optional[uuid.UUID] = None
+    team_name: Optional[str] = None
+    matches_played: int = 0
+    runs: int = 0
+    balls_faced: int = 0
+    wickets: int = 0
+    runs_conceded: int = 0
+    overs_bowled: Decimal = Decimal("0.0")
+    batting_average: float = 0.0
+    strike_rate: float = 0.0
+    bowling_average: float = 0.0
+    economy: float = 0.0
+    fifties: int = 0
+    hundreds: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 

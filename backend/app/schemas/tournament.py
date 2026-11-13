@@ -48,3 +48,20 @@ class TournamentResponse(TournamentBase):
 
 class TournamentTeamRegister(BaseModel):
     team_id: uuid.UUID
+
+
+class PointsTableRowResponse(BaseModel):
+    tournament_id: uuid.UUID
+    team_id: uuid.UUID
+    team_name: Optional[str] = None
+    short_code: Optional[str] = None
+    played: int = 0
+    won: int = 0
+    lost: int = 0
+    tied: int = 0
+    nr: int = 0
+    points: int = 0
+    nrr: float = 0.0
+
+    model_config = ConfigDict(from_attributes=True)
+

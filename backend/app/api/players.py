@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.models.user import User
 from app.schemas.common import PaginatedResponse
 from app.schemas.player import (
+    PlayerCareerDetailedStatsResponse,
     PlayerCreate,
     PlayerResponse,
     PlayerUpdate,
@@ -48,6 +49,21 @@ def get_player(
 ) -> PlayerResponse:
     """Public: Get player profile including career stats."""
     return player_service.get_player_by_id(db=db, player_id=player_id)
+
+
+@router.get(
+    "/{player_id}/stats", response_model=PlayerCareerDetailedStatsResponse
+)
+def get_player_stats(
+    player_id: uuid.UUID,
+    db: Session = Depends(get_db),
+) -> PlayerCareerDetailedStatsResponse:
+    """Public: Get player career statistical figures and milestones."""
+    from app.services import post_match_service
+
+    return post_match_service.get_player_detailed_stats(
+        db=db, player_id=player_id
+    )
 
 
 @router.post("", response_model=PlayerResponse, status_code=status.HTTP_201_CREATED)

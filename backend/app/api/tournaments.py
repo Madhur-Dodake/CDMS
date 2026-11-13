@@ -11,6 +11,7 @@ from app.schemas.common import PaginatedResponse
 from app.schemas.match import GenerateScheduleResponse
 from app.schemas.team import TeamResponse
 from app.schemas.tournament import (
+    PointsTableRowResponse,
     TournamentCreate,
     TournamentResponse,
     TournamentTeamRegister,
@@ -94,6 +95,22 @@ def get_tournament_teams(
 ) -> List[TeamResponse]:
     """Public: List all teams registered in a tournament."""
     return tournament_service.get_tournament_teams(
+        db=db, tournament_id=tournament_id
+    )
+
+
+@router.get(
+    "/{tournament_id}/points-table",
+    response_model=List[PointsTableRowResponse],
+)
+def get_points_table(
+    tournament_id: uuid.UUID,
+    db: Session = Depends(get_db),
+) -> List[PointsTableRowResponse]:
+    """Public: Get tournament points table sorted by points, NRR, and wins."""
+    from app.services import post_match_service
+
+    return post_match_service.get_tournament_points_table(
         db=db, tournament_id=tournament_id
     )
 
