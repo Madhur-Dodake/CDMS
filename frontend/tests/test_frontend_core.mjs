@@ -307,4 +307,51 @@ test('Frontend Architecture & Build Verification Suite', async (t) => {
     assert.ok(playerProfileCode.includes('recharts'), 'PlayerProfilePage must import from recharts');
     assert.ok(playerProfileCode.includes('BarChart'), 'PlayerProfilePage must render BarChart');
   });
+
+  await t.test('11. Admin Management Pages & Form Validation Contract', () => {
+    // 1. LoginPage
+    const loginPage = fs.readFileSync(path.join(rootDir, 'src', 'pages', 'LoginPage.jsx'), 'utf8');
+    assert.ok(loginPage.includes('useForm'), 'LoginPage must use react-hook-form');
+    assert.ok(loginPage.includes('zodResolver'), 'LoginPage must use zodResolver');
+    assert.ok(loginPage.includes('activeTab') || loginPage.includes('admin'), 'LoginPage must have role switcher');
+    assert.ok(loginPage.includes('showPassword'), 'LoginPage must have password visibility toggle');
+
+    // 2. AdminDashboardPage
+    const dashPage = fs.readFileSync(path.join(rootDir, 'src', 'pages', 'admin', 'AdminDashboardPage.jsx'), 'utf8');
+    assert.ok(dashPage.includes('dashboardService') || dashPage.includes('matchesService'), 'AdminDashboardPage must fetch dashboard data');
+    assert.ok(dashPage.includes('Scoring Console') || dashPage.includes('/admin/scoring'), 'AdminDashboardPage must link to Scoring Console');
+
+    // 3. AdminTournamentsPage
+    const tourPage = fs.readFileSync(path.join(rootDir, 'src', 'pages', 'admin', 'AdminTournamentsPage.jsx'), 'utf8');
+    assert.ok(tourPage.includes('tournamentSchema'), 'AdminTournamentsPage must define tournamentSchema');
+    assert.ok(tourPage.includes('generateSchedule'), 'AdminTournamentsPage must support generateSchedule');
+    assert.ok(tourPage.includes('levelFilter'), 'AdminTournamentsPage must support level filter tabs');
+
+    // 4. AdminTeamsPage
+    const teamPage = fs.readFileSync(path.join(rootDir, 'src', 'pages', 'admin', 'AdminTeamsPage.jsx'), 'utf8');
+    assert.ok(teamPage.includes('teamSchema'), 'AdminTeamsPage must define teamSchema');
+    assert.ok(teamPage.includes('playerSchema'), 'AdminTeamsPage must define playerSchema for add player modal');
+
+    // 5. AdminPlayersPage
+    const playPage = fs.readFileSync(path.join(rootDir, 'src', 'pages', 'admin', 'AdminPlayersPage.jsx'), 'utf8');
+    assert.ok(playPage.includes('roleFilter'), 'AdminPlayersPage must support role filter');
+    assert.ok(playPage.includes('dob'), 'AdminPlayersPage must support date of birth');
+
+    // 6. AdminVenuesPage
+    const venuePage = fs.readFileSync(path.join(rootDir, 'src', 'pages', 'admin', 'AdminVenuesPage.jsx'), 'utf8');
+    assert.ok(venuePage.includes('venueSchema'), 'AdminVenuesPage must define venueSchema');
+    assert.ok(venuePage.includes('capacity'), 'AdminVenuesPage must support capacity');
+
+    // 7. AdminMatchesPage
+    const matchPage = fs.readFileSync(path.join(rootDir, 'src', 'pages', 'admin', 'AdminMatchesPage.jsx'), 'utf8');
+    assert.ok(matchPage.includes('matchSchema'), 'AdminMatchesPage must define matchSchema');
+    assert.ok(matchPage.includes('serverError'), 'AdminMatchesPage must display server error inline');
+    assert.ok(matchPage.includes('generateSchedule') || matchPage.includes('Generate Schedule'), 'AdminMatchesPage must support generate schedule');
+    assert.ok(matchPage.includes('Scoring Console') || matchPage.includes('/admin/scoring'), 'AdminMatchesPage must link to Scoring Console');
+
+    // 8. AdminUsersPage
+    const userPage = fs.readFileSync(path.join(rootDir, 'src', 'pages', 'admin', 'AdminUsersPage.jsx'), 'utf8');
+    assert.ok(userPage.includes('userCreateSchema'), 'AdminUsersPage must define userCreateSchema');
+    assert.ok(userPage.includes('scorer'), 'AdminUsersPage must support creating scorer');
+  });
 });
