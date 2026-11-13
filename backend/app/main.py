@@ -2,8 +2,14 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.health import router as health_router
 from app.api.auth import router as auth_router
+from app.api.dashboard import router as dashboard_router
+from app.api.health import router as health_router
+from app.api.players import router as players_router
+from app.api.teams import router as teams_router
+from app.api.tournaments import router as tournaments_router
+from app.api.users import router as users_router
+from app.api.venues import router as venues_router
 from app.schemas.health import HealthResponse
 from app.ws.connection_manager import manager
 
@@ -25,6 +31,12 @@ app.add_middleware(
 # Register API routers
 app.include_router(health_router, prefix="/api", tags=["Health"])
 app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
+app.include_router(venues_router, prefix="/api")
+app.include_router(teams_router, prefix="/api")
+app.include_router(tournaments_router, prefix="/api")
+app.include_router(players_router, prefix="/api")
+app.include_router(users_router, prefix="/api")
+app.include_router(dashboard_router, prefix="/api")
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
@@ -49,4 +61,3 @@ async def websocket_match_endpoint(websocket: WebSocket, match_id: str) -> None:
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
         manager.disconnect(match_id, websocket)
-

@@ -108,3 +108,4 @@ def require_scorer_or_admin(current_user: User = Depends(get_current_user)) -> U
             detail="Scorer or Admin access required",
         )
     return current_user
+
