@@ -12,6 +12,7 @@ import TournamentsPage from './pages/TournamentsPage';
 import TournamentStandingsPage from './pages/TournamentStandingsPage';
 import TeamsPage from './pages/TeamsPage';
 import PlayersPage from './pages/PlayersPage';
+import PlayerProfilePage from './pages/PlayerProfilePage';
 import LiveScoresPage from './pages/LiveScoresPage';
 import MatchScorecardPage from './pages/MatchScorecardPage';
 import LoginPage from './pages/LoginPage';
@@ -39,12 +40,15 @@ export default function App() {
         <Route element={<PublicLayout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/tournaments" element={<TournamentsPage />} />
+          <Route path="/tournaments/:id" element={<TournamentStandingsPage />} />
           <Route path="/tournaments/:id/standings" element={<TournamentStandingsPage />} />
           <Route path="/teams" element={<TeamsPage />} />
           <Route path="/players" element={<PlayersPage />} />
+          <Route path="/players/:id" element={<PlayerProfilePage />} />
           <Route path="/live-scores" element={<LiveScoresPage />} />
           <Route path="/live" element={<Navigate to="/live-scores" replace />} />
           <Route path="/matches/:id" element={<MatchScorecardPage />} />
+          <Route path="/match/:id" element={<MatchScorecardPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forbidden" element={<ForbiddenPage />} />
         </Route>

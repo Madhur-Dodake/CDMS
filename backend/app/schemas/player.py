@@ -37,6 +37,7 @@ class PlayerCareerDetailedStatsResponse(BaseModel):
     economy: float = 0.0
     fifties: int = 0
     hundreds: int = 0
+    recent_innings: Optional[list] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 

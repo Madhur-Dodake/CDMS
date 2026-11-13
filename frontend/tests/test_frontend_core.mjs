@@ -256,6 +256,7 @@ test('Frontend Architecture & Build Verification Suite', async (t) => {
       'src/pages/PlayersPage.jsx',
       'src/pages/LiveScoresPage.jsx',
       'src/pages/MatchScorecardPage.jsx',
+      'src/pages/PlayerProfilePage.jsx',
       'src/pages/LoginPage.jsx',
       'src/pages/ForbiddenPage.jsx',
       'src/pages/NotFoundPage.jsx',
@@ -279,5 +280,31 @@ test('Frontend Architecture & Build Verification Suite', async (t) => {
       assert.ok(content.length > 50, `File must not be empty: ${relPath}`);
       assert.ok(content.includes('export default'), `File must export default component: ${relPath}`);
     }
+  });
+
+  await t.test('10. useMatchSocket & Public API Services Contract', () => {
+    // 1. Hook file checks
+    const hookPath = path.join(rootDir, 'src', 'hooks', 'useMatchSocket.js');
+    assert.ok(fs.existsSync(hookPath), 'useMatchSocket.js must exist');
+    const hookCode = fs.readFileSync(hookPath, 'utf8');
+
+    assert.ok(hookCode.includes('WebSocket'), 'useMatchSocket must use WebSocket');
+    assert.ok(hookCode.includes('5000'), 'useMatchSocket must poll every 5000ms on socket disconnect');
+    assert.ok(hookCode.includes('reconnectTimerRef') || hookCode.includes('connectWebSocket'), 'useMatchSocket must auto-reconnect');
+    assert.ok(hookCode.includes('isPolling'), 'useMatchSocket must expose isPolling state');
+
+    // 2. Services contract checks
+    const apiPath = path.join(rootDir, 'src', 'services', 'api.js');
+    const apiCode = fs.readFileSync(apiPath, 'utf8');
+    assert.ok(apiCode.includes('matchesService'), 'api.js must export matchesService');
+    assert.ok(apiCode.includes('tournamentsService'), 'api.js must export tournamentsService');
+    assert.ok(apiCode.includes('teamsService'), 'api.js must export teamsService');
+    assert.ok(apiCode.includes('playersService'), 'api.js must export playersService');
+
+    // 3. Recharts integration in PlayerProfilePage
+    const playerProfilePath = path.join(rootDir, 'src', 'pages', 'PlayerProfilePage.jsx');
+    const playerProfileCode = fs.readFileSync(playerProfilePath, 'utf8');
+    assert.ok(playerProfileCode.includes('recharts'), 'PlayerProfilePage must import from recharts');
+    assert.ok(playerProfileCode.includes('BarChart'), 'PlayerProfilePage must render BarChart');
   });
 });

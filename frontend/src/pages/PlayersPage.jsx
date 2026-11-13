@@ -1,138 +1,188 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Activity, Search, Shield, User, Users } from 'lucide-react';
-import apiClient from '../services/api';
+import { Link } from 'react-router-dom';
+import {
+  ArrowRight,
+  Award,
+  BarChart3,
+  Flame,
+  RefreshCw,
+  Search,
+  User,
+  Users,
+} from 'lucide-react';
+import { playersService } from '../services/api';
+import { LoadingSkeleton, EmptyState, ErrorState } from '../components/UIFeedback';
 
 export default function PlayersPage() {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const teamId = searchParams.get('team_id');
-  const [search, setSearch] = useState('');
+  const [error, setError] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+
+  const fetchPlayers = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const params = { page_size: 60 };
+      if (searchQuery.trim()) params.q = searchQuery.trim();
+      if (roleFilter) params.role = roleFilter;
+
+      const data = await playersService.list(params);
+      setPlayers(data.items || []);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to load players');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setLoading(true);
-    const query = teamId ? `?team_id=${teamId}&page_size=50` : '?page_size=50';
-    apiClient
-      .get(`/api/players${query}`)
-      .then((res) => {
-        setPlayers(res.data.items || []);
-        setLoading(false);
-      })
-      .catch(() => {
-        setLoading(false);
-      });
-  }, [teamId]);
+    fetchPlayers();
+  }, [roleFilter]);
 
-  const filteredPlayers = players.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    (p.role && p.role.toLowerCase().includes(search.toLowerCase())) ||
-    (p.team_name && p.team_name.toLowerCase().includes(search.toLowerCase()))
-  );
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    fetchPlayers();
+  };
+
+  const roles = [
+    { id: '', label: 'All Squad' },
+    { id: 'Batter', label: 'Batters' },
+    { id: 'Bowler', label: 'Bowlers' },
+    { id: 'All-rounder', label: 'All-Rounders' },
+    { id: 'Wicketkeeper', label: 'Wicketkeepers' },
+  ];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
             <Users className="w-6 h-6 text-emerald-500" />
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
-              Players Directory
-            </h1>
-          </div>
-          <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-            Player profiles, batting/bowling classifications, and career statistical figures
+            <span>Athletes & Player Registry</span>
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Search players, filter by specialty role, view career batting averages, bowling economies, and match logs
           </p>
         </div>
 
-        {/* Search */}
-        <div className="relative max-w-xs w-full">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        <button
+          onClick={fetchPlayers}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-emerald-500 transition shadow-sm self-start sm:self-auto"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          <span>Refresh</span>
+        </button>
+      </div>
+
+      {/* Search and Role Filter Tabs */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+        <form onSubmit={handleSearchSubmit} className="relative flex-1">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search player or role..."
-            className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search athlete by name (e.g. Virat, Rohit)..."
+            className="w-full pl-10 pr-4 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
           />
+        </form>
+
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          {roles.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setRoleFilter(r.id)}
+              className={`px-3 py-2 text-xs font-bold rounded-xl border whitespace-nowrap transition ${
+                roleFilter === r.id
+                  ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Grid */}
+      {/* Players Grid */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="h-44 rounded-2xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
-          ))}
-        </div>
-      ) : filteredPlayers.length === 0 ? (
-        <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 shadow-card">
-          <User className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-          <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">No Players Found</h3>
-          <p className="text-xs text-slate-500 mt-1">Try clearing filters or search terms.</p>
-        </div>
+        <LoadingSkeleton rows={6} type="card" />
+      ) : error ? (
+        <ErrorState message={error} onRetry={fetchPlayers} />
+      ) : players.length === 0 ? (
+        <EmptyState
+          title="No athletes found"
+          description="Try broadening your search term or selecting another role filter."
+          icon={Users}
+        />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredPlayers.map((player) => (
-            <div
-              key={player.player_id}
-              className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-card hover:shadow-card-hover transition duration-200 flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                      {player.name}
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1">
-                      <Shield className="w-3 h-3 text-emerald-500" />
-                      <span>{player.team_name || 'Independent Player'}</span>
-                    </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          {players.map((p) => {
+            const stats = p.stats || {};
+            return (
+              <div
+                key={p.player_id}
+                className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-card hover:shadow-card-hover transition flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                      {p.role || 'Athlete'}
+                    </span>
+                    <span className="text-[11px] font-bold text-slate-400">
+                      {p.team_name || 'Free Agent'}
+                    </span>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 uppercase tracking-wider">
-                    {player.role || 'Player'}
-                  </span>
+
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                    {p.name}
+                  </h3>
+
+                  <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-1 text-[11px] text-slate-500">
+                    <p>
+                      Batting: <strong className="text-slate-700 dark:text-slate-300">{p.batting_style || 'Right-hand'}</strong>
+                    </p>
+                    {p.bowling_style && p.bowling_style !== 'None' && (
+                      <p>
+                        Bowling: <strong className="text-slate-700 dark:text-slate-300">{p.bowling_style}</strong>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Career figures preview */}
+                  <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="p-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                      <span className="text-[9px] uppercase font-bold text-slate-400 block">Matches</span>
+                      <strong className="text-slate-800 dark:text-slate-200">{stats.matches_played ?? 0}</strong>
+                    </div>
+                    <div className="p-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                      <span className="text-[9px] uppercase font-bold text-slate-400 block">Runs</span>
+                      <strong className="text-emerald-600 dark:text-emerald-400">{stats.runs ?? 0}</strong>
+                    </div>
+                    <div className="p-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                      <span className="text-[9px] uppercase font-bold text-slate-400 block">Wkts</span>
+                      <strong className="text-slate-800 dark:text-slate-200">{stats.wickets ?? 0}</strong>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="mt-3 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
-                  {player.batting_style && <div>Batting: <span className="text-slate-700 dark:text-slate-200 font-medium">{player.batting_style}</span></div>}
-                  {player.bowling_style && <div>Bowling: <span className="text-slate-700 dark:text-slate-200 font-medium">{player.bowling_style}</span></div>}
+                <div className="mt-5">
+                  <Link
+                    to={`/players/${p.player_id}`}
+                    className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500 dark:hover:bg-emerald-500 hover:text-white dark:hover:text-white text-slate-700 dark:text-slate-300 font-semibold text-xs transition"
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    <span>View Profile & Chart</span>
+                  </Link>
                 </div>
               </div>
-
-              {/* Career Stats Preview */}
-              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-4 gap-2 text-center text-xs">
-                <div>
-                  <p className="text-slate-400 text-[10px] uppercase font-bold">Runs</p>
-                  <p className="font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
-                    {player.stats?.runs ?? 0}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-[10px] uppercase font-bold">SR</p>
-                  <p className="font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
-                    {player.stats?.strike_rate ?? '0.0'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-[10px] uppercase font-bold">Wkts</p>
-                  <p className="font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
-                    {player.stats?.wickets ?? 0}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-[10px] uppercase font-bold">Econ</p>
-                  <p className="font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">
-                    {player.stats?.economy ?? '0.0'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
-
