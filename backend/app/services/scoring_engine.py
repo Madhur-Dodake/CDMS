@@ -1,6 +1,6 @@
 import copy
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -82,7 +82,7 @@ class InningsState:
 
 
 # -------------------------------------------------------------
-# HELPER / PURE CALCULATION FUNCTIONS
+# HELPER / PURE CALCULATION FUNCTIONS (V(G) <= 5)
 # -------------------------------------------------------------
 
 def overs_display(balls: int) -> str:
@@ -112,30 +112,266 @@ def required_run_rate(runs_needed: int, balls_remaining: int) -> Optional[float]
     return round(runs_needed / overs_decimal, 2)
 
 
+def _format_wicket_token(ball: BallInput) -> str:
+    """Format recent-ball token for wicket delivery."""
+    if ball.extras_type == "no_ball":
+        return "W+Nb"
+    return "W"
+
+
+def _format_wide_token(ball: BallInput) -> str:
+    """Format recent-ball token for wide delivery."""
+    w = ball.extras_runs if ball.extras_runs > 1 else 1
+    return "Wd" if w == 1 else f"{w}Wd"
+
+
+def _format_no_ball_token(ball: BallInput) -> str:
+    """Format recent-ball token for no-ball delivery."""
+    nb = ball.extras_runs if ball.extras_runs > 0 else 1
+    total_nb = ball.runs_batter + nb
+    return f"{total_nb}Nb" if total_nb > 1 else "Nb"
+
+
+def _format_bye_token(ball: BallInput, suffix: str) -> str:
+    """Format recent-ball token for bye or leg-bye delivery."""
+    b = ball.extras_runs if ball.extras_runs > 0 else 1
+    return f"{b}{suffix}"
+
+
 def get_ball_display_token(ball: BallInput) -> str:
     """Convert delivery parameters into a standard recent-balls ribbon token."""
     if ball.is_wicket:
-        if ball.extras_type == "no_ball":
-            return f"W+Nb"
-        return "W"
+        return _format_wicket_token(ball)
     if ball.extras_type == "wide":
-        w = ball.extras_runs if ball.extras_runs > 1 else 1
-        return "Wd" if w == 1 else f"{w}Wd"
+        return _format_wide_token(ball)
     if ball.extras_type == "no_ball":
-        nb = ball.extras_runs if ball.extras_runs > 0 else 1
-        total_nb = ball.runs_batter + nb
-        return f"{total_nb}Nb" if total_nb > 1 else "Nb"
+        return _format_no_ball_token(ball)
     if ball.extras_type == "bye":
-        b = ball.extras_runs if ball.extras_runs > 0 else 1
-        return f"{b}B"
+        return _format_bye_token(ball, "B")
     if ball.extras_type == "leg_bye":
-        lb = ball.extras_runs if ball.extras_runs > 0 else 1
-        return f"{lb}Lb"
+        return _format_bye_token(ball, "Lb")
     return str(ball.runs_batter)
 
 
 # -------------------------------------------------------------
-# CORE PURE SCORING ENGINE
+# INTERNAL ATOMIC DELIVERY HELPERS (V(G) <= 5)
+# -------------------------------------------------------------
+
+def _init_ball_participants(state: InningsState, ball: BallInput) -> Tuple[BatterStats, BowlerStats]:
+    """Ensure participants exist in innings state dictionaries."""
+    if ball.striker_id not in state.batters:
+        state.batters[ball.striker_id] = BatterStats(player_id=ball.striker_id)
+    if ball.non_striker_id not in state.batters:
+        state.batters[ball.non_striker_id] = BatterStats(player_id=ball.non_striker_id)
+    if ball.bowler_id not in state.bowlers:
+        state.bowlers[ball.bowler_id] = BowlerStats(player_id=ball.bowler_id)
+    return state.batters[ball.striker_id], state.bowlers[ball.bowler_id]
+
+
+def _process_wide(state: InningsState, bowler: BowlerStats, ball: BallInput) -> Tuple[bool, int, bool]:
+    """Process wide delivery outcomes: illegal ball, runs added to extras and bowler."""
+    extra_amt = ball.extras_runs if ball.extras_runs > 0 else 1
+    state.extras.wides += extra_amt
+    state.extras.total += extra_amt
+    bowler.wides += 1
+    bowler.runs_conceded += extra_amt
+    return False, extra_amt, False
+
+
+def _process_no_ball(
+    state: InningsState, striker: BatterStats, bowler: BowlerStats, ball: BallInput
+) -> Tuple[bool, int, bool]:
+    """Process no-ball delivery outcomes: illegal ball, batter runs and bowler conceded."""
+    extra_amt = ball.extras_runs if ball.extras_runs > 0 else 1
+    state.extras.no_balls += extra_amt
+    state.extras.total += extra_amt
+
+    runs_off_bat = ball.runs_batter
+    striker.runs += runs_off_bat
+    striker.balls_faced += 1
+    if runs_off_bat == 4:
+        striker.fours += 1
+    elif runs_off_bat == 6:
+        striker.sixes += 1
+
+    bowler.no_balls += 1
+    bowler.runs_conceded += (runs_off_bat + extra_amt)
+    return False, runs_off_bat + extra_amt, (runs_off_bat % 2 == 1)
+
+
+def _process_bye_or_leg_bye(
+    state: InningsState,
+    striker: BatterStats,
+    bowler: BowlerStats,
+    ball: BallInput,
+    is_leg_bye: bool,
+) -> Tuple[bool, int, bool]:
+    """Process bye or leg-bye outcomes: legal ball, bowler conceded runs untouched."""
+    extra_amt = ball.extras_runs if ball.extras_runs > 0 else 1
+    if is_leg_bye:
+        state.extras.leg_byes += extra_amt
+    else:
+        state.extras.byes += extra_amt
+    state.extras.total += extra_amt
+
+    striker.balls_faced += 1
+    bowler.balls_bowled += 1
+    return True, extra_amt, (extra_amt % 2 == 1)
+
+
+def _process_penalty(state: InningsState, ball: BallInput) -> Tuple[bool, int, bool]:
+    """Process penalty runs: illegal ball, added directly to extras."""
+    extra_amt = ball.extras_runs if ball.extras_runs > 0 else 5
+    state.extras.penalty += extra_amt
+    state.extras.total += extra_amt
+    return False, extra_amt, False
+
+
+def _process_standard_delivery(
+    striker: BatterStats, bowler: BowlerStats, ball: BallInput
+) -> Tuple[bool, int, bool]:
+    """Process standard delivery off the bat."""
+    runs_off_bat = ball.runs_batter
+    striker.runs += runs_off_bat
+    striker.balls_faced += 1
+    if runs_off_bat == 4:
+        striker.fours += 1
+    elif runs_off_bat == 6:
+        striker.sixes += 1
+
+    bowler.balls_bowled += 1
+    bowler.runs_conceded += runs_off_bat
+    if runs_off_bat == 0 and not ball.is_wicket:
+        bowler.dots += 1
+
+    return True, runs_off_bat, (runs_off_bat % 2 == 1)
+
+
+def _process_delivery_outcome(
+    state: InningsState, striker: BatterStats, bowler: BowlerStats, ball: BallInput
+) -> Tuple[bool, int, bool]:
+    """Dispatch outcome processing based on extras_type."""
+    if ball.extras_type == "wide":
+        return _process_wide(state, bowler, ball)
+    if ball.extras_type == "no_ball":
+        return _process_no_ball(state, striker, bowler, ball)
+    if ball.extras_type == "bye":
+        return _process_bye_or_leg_bye(state, striker, bowler, ball, is_leg_bye=False)
+    if ball.extras_type == "leg_bye":
+        return _process_bye_or_leg_bye(state, striker, bowler, ball, is_leg_bye=True)
+    if ball.extras_type == "penalty":
+        return _process_penalty(state, ball)
+    return _process_standard_delivery(striker, bowler, ball)
+
+
+def _is_target_chased(state: InningsState) -> bool:
+    """Check if 2nd innings target has been successfully chased."""
+    return (
+        state.innings_no == 2
+        and state.target_runs is not None
+        and state.total_runs >= state.target_runs
+    )
+
+
+def _record_dismissal(
+    state: InningsState, bowler: BowlerStats, ball: BallInput, dismissed_id: str
+) -> None:
+    """Update dismissed batter record and bowler wicket count."""
+    if dismissed_id in state.batters:
+        dismissed_batter = state.batters[dismissed_id]
+        dismissed_batter.is_out = True
+        dismissed_batter.dismissal_type = ball.wicket_type or "out"
+        dismissed_batter.bowler_id = ball.bowler_id
+
+    if ball.wicket_type not in ("run_out", "retired"):
+        bowler.wickets += 1
+
+
+def _replace_dismissed_batter(
+    state: InningsState,
+    ball: BallInput,
+    active_striker_id: str,
+    active_non_striker_id: str,
+    dismissed_id: str,
+    innings_ended: bool,
+) -> Tuple[str, str]:
+    """Handle batter substitution on wicket fall."""
+    if innings_ended:
+        return active_striker_id, active_non_striker_id
+
+    if not ball.next_batter_id:
+        raise ValueError(
+            "next_batter_id is required when a wicket falls and innings is not ended"
+        )
+
+    if dismissed_id == active_striker_id:
+        active_striker_id = ball.next_batter_id
+    else:
+        active_non_striker_id = ball.next_batter_id
+
+    if ball.next_batter_id not in state.batters:
+        state.batters[ball.next_batter_id] = BatterStats(player_id=ball.next_batter_id)
+
+    return active_striker_id, active_non_striker_id
+
+
+def _process_wicket(
+    state: InningsState,
+    bowler: BowlerStats,
+    ball: BallInput,
+    active_striker_id: str,
+    active_non_striker_id: str,
+    target_chased: bool,
+) -> Tuple[str, str]:
+    """Process wicket event, records dismissal, and substitutes the next batter."""
+    if not ball.is_wicket:
+        return active_striker_id, active_non_striker_id
+
+    state.wickets += 1
+    dismissed_id = ball.dismissed_player_id or ball.striker_id
+    state.dismissed_players.append(dismissed_id)
+
+    _record_dismissal(state, bowler, ball, dismissed_id)
+
+    innings_ended = (
+        state.wickets >= 10
+        or (state.legal_balls >= state.max_overs * 6)
+        or target_chased
+    )
+
+    return _replace_dismissed_batter(
+        state, ball, active_striker_id, active_non_striker_id, dismissed_id, innings_ended
+    )
+
+
+def _compute_strike_rotation(
+    striker_id: str, non_striker_id: str, rotates_on_runs: bool, over_ended: bool
+) -> Tuple[str, str]:
+    """Compute strike swapping at ball conclusion."""
+    swaps = (1 if rotates_on_runs else 0) + (1 if over_ended else 0)
+    if swaps % 2 == 1:
+        return non_striker_id, striker_id
+    return striker_id, non_striker_id
+
+
+def _check_innings_completion(state: InningsState, target_chased: bool) -> bool:
+    """Check whether innings has terminated under any cricket rule."""
+    if state.wickets >= 10:
+        return True
+    if state.legal_balls >= state.max_overs * 6:
+        return True
+    return target_chased
+
+
+def _update_recent_balls(state: InningsState, ball: BallInput) -> None:
+    """Append delivery token and maintain 6-ball rolling window."""
+    token = get_ball_display_token(ball)
+    state.recent_balls.append(token)
+    state.recent_balls = state.recent_balls[-6:]
+
+
+# -------------------------------------------------------------
+# CORE PURE SCORING ENGINE (V(G) <= 5)
 # -------------------------------------------------------------
 
 def apply_ball(state: InningsState, ball: BallInput) -> InningsState:
@@ -149,191 +385,30 @@ def apply_ball(state: InningsState, ball: BallInput) -> InningsState:
     # Clone state deeply to ensure pure functional immutability
     new_state = copy.deepcopy(state)
 
-    # Ensure batters exist in stats
-    if ball.striker_id not in new_state.batters:
-        new_state.batters[ball.striker_id] = BatterStats(player_id=ball.striker_id)
-    if ball.non_striker_id not in new_state.batters:
-        new_state.batters[ball.non_striker_id] = BatterStats(player_id=ball.non_striker_id)
-
-    # Ensure bowler exists in stats
-    if ball.bowler_id not in new_state.bowlers:
-        new_state.bowlers[ball.bowler_id] = BowlerStats(player_id=ball.bowler_id)
-
-    striker = new_state.batters[ball.striker_id]
-    bowler = new_state.bowlers[ball.bowler_id]
-
+    striker, bowler = _init_ball_participants(new_state, ball)
     new_state.current_bowler_id = ball.bowler_id
     new_state.total_deliveries += 1
 
-    # 1. Extras and Legal Ball Evaluation
-    is_legal = True
-    runs_added_to_total = 0
-    runs_off_bat = ball.runs_batter
-    rotates_on_runs = False
-
-    if ball.extras_type == "wide":
-        is_legal = False
-        extra_amt = ball.extras_runs if ball.extras_runs > 0 else 1
-        new_state.extras.wides += extra_amt
-        new_state.extras.total += extra_amt
-        runs_added_to_total = extra_amt
-        bowler.wides += 1
-        bowler.runs_conceded += extra_amt
-        # Batter balls faced does NOT increment on wide
-
-    elif ball.extras_type == "no_ball":
-        is_legal = False
-        extra_amt = ball.extras_runs if ball.extras_runs > 0 else 1
-        new_state.extras.no_balls += extra_amt
-        new_state.extras.total += extra_amt
-        runs_added_to_total = runs_off_bat + extra_amt
-
-        # Batter gets runs off bat and faces a delivery
-        striker.runs += runs_off_bat
-        striker.balls_faced += 1
-        if runs_off_bat == 4:
-            striker.fours += 1
-        elif runs_off_bat == 6:
-            striker.sixes += 1
-
-        bowler.no_balls += 1
-        bowler.runs_conceded += (runs_off_bat + extra_amt)
-
-        # Strike rotates on odd runs off the bat
-        if runs_off_bat % 2 == 1:
-            rotates_on_runs = True
-
-    elif ball.extras_type == "bye":
-        is_legal = True
-        extra_amt = ball.extras_runs if ball.extras_runs > 0 else 1
-        new_state.extras.byes += extra_amt
-        new_state.extras.total += extra_amt
-        runs_added_to_total = extra_amt
-
-        striker.balls_faced += 1
-        bowler.balls_bowled += 1
-        # Byes do NOT count against bowler's runs conceded
-        if extra_amt % 2 == 1:
-            rotates_on_runs = True
-
-    elif ball.extras_type == "leg_bye":
-        is_legal = True
-        extra_amt = ball.extras_runs if ball.extras_runs > 0 else 1
-        new_state.extras.leg_byes += extra_amt
-        new_state.extras.total += extra_amt
-        runs_added_to_total = extra_amt
-
-        striker.balls_faced += 1
-        bowler.balls_bowled += 1
-        # Leg-byes do NOT count against bowler's runs conceded
-        if extra_amt % 2 == 1:
-            rotates_on_runs = True
-
-    elif ball.extras_type == "penalty":
-        is_legal = False
-        extra_amt = ball.extras_runs if ball.extras_runs > 0 else 5
-        new_state.extras.penalty += extra_amt
-        new_state.extras.total += extra_amt
-        runs_added_to_total = extra_amt
-
-    else:
-        # Standard delivery off the bat (no extras)
-        is_legal = True
-        runs_added_to_total = runs_off_bat
-        striker.runs += runs_off_bat
-        striker.balls_faced += 1
-        if runs_off_bat == 4:
-            striker.fours += 1
-        elif runs_off_bat == 6:
-            striker.sixes += 1
-
-        bowler.balls_bowled += 1
-        bowler.runs_conceded += runs_off_bat
-        if runs_off_bat == 0 and not ball.is_wicket:
-            bowler.dots += 1
-
-        if runs_off_bat % 2 == 1:
-            rotates_on_runs = True
-
-    new_state.total_runs += runs_added_to_total
-
+    is_legal, runs_added, rotates_on_runs = _process_delivery_outcome(
+        new_state, striker, bowler, ball
+    )
+    new_state.total_runs += runs_added
     if is_legal:
         new_state.legal_balls += 1
 
-    # 2. Check Target Chased Before Wicket/End
-    target_chased = (
-        new_state.innings_no == 2
-        and new_state.target_runs is not None
-        and new_state.total_runs >= new_state.target_runs
+    target_chased = _is_target_chased(new_state)
+
+    act_striker, act_non_striker = _process_wicket(
+        new_state, bowler, ball, ball.striker_id, ball.non_striker_id, target_chased
     )
 
-    # 3. Wicket Evaluation
-    active_striker_id = ball.striker_id
-    active_non_striker_id = ball.non_striker_id
-
-    if ball.is_wicket:
-        new_state.wickets += 1
-        dismissed_id = ball.dismissed_player_id or ball.striker_id
-        new_state.dismissed_players.append(dismissed_id)
-
-        # Update dismissed batter
-        if dismissed_id in new_state.batters:
-            dismissed_batter = new_state.batters[dismissed_id]
-            dismissed_batter.is_out = True
-            dismissed_batter.dismissal_type = ball.wicket_type or "out"
-            dismissed_batter.bowler_id = ball.bowler_id
-
-        # Credit bowler with wicket (except for run outs / retired)
-        if ball.wicket_type not in ("run_out", "retired"):
-            bowler.wickets += 1
-
-        # Check if innings has ended
-        all_out = (new_state.wickets >= 10)
-        overs_done = (new_state.legal_balls >= new_state.max_overs * 6)
-
-        if not all_out and not overs_done and not target_chased:
-            if not ball.next_batter_id:
-                raise ValueError(
-                    "next_batter_id is required when a wicket falls and innings is not ended"
-                )
-            # Replace the dismissed player
-            if dismissed_id == active_striker_id:
-                active_striker_id = ball.next_batter_id
-            else:
-                active_non_striker_id = ball.next_batter_id
-
-            if ball.next_batter_id not in new_state.batters:
-                new_state.batters[ball.next_batter_id] = BatterStats(player_id=ball.next_batter_id)
-
-    # 4. Strike Rotation Mechanics
-    # Strike rotates on odd runs (bat or bye/leg-bye), AND rotates at the end of each over (6 legal balls).
-    # If both occur, they cancel each other out.
     over_ended = is_legal and (new_state.legal_balls % 6 == 0)
+    new_state.striker_id, new_state.non_striker_id = _compute_strike_rotation(
+        act_striker, act_non_striker, rotates_on_runs, over_ended
+    )
 
-    swaps = 0
-    if rotates_on_runs:
-        swaps += 1
-    if over_ended:
-        swaps += 1
-
-    if swaps % 2 == 1:
-        active_striker_id, active_non_striker_id = active_non_striker_id, active_striker_id
-
-    new_state.striker_id = active_striker_id
-    new_state.non_striker_id = active_non_striker_id
-
-    # 5. Innings Completion Check
-    if new_state.wickets >= 10:
-        new_state.is_completed = True
-    elif new_state.legal_balls >= new_state.max_overs * 6:
-        new_state.is_completed = True
-    elif target_chased:
-        new_state.is_completed = True
-
-    # 6. Recent Balls Ribbon (Keep last 6 deliveries)
-    token = get_ball_display_token(ball)
-    new_state.recent_balls.append(token)
-    new_state.recent_balls = new_state.recent_balls[-6:]
+    new_state.is_completed = _check_innings_completion(new_state, target_chased)
+    _update_recent_balls(new_state, ball)
 
     return new_state
 

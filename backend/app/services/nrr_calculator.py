@@ -2,6 +2,43 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 
+def _validate_fractional_parts(overs: int, balls: int, raw_str: str) -> None:
+    """Validate non-negative overs and legal balls range (0-5)."""
+    if overs < 0:
+        raise ValueError("Overs component cannot be negative")
+    if not (0 <= balls <= 5):
+        raise ValueError(f"Balls component must be between 0 and 5, got {balls} in '{raw_str}'")
+
+
+def _parse_fractional_overs(clean_str: str, raw_str: str) -> float:
+    """Parse fractional cricket overs ('X.Y') into decimal overs."""
+    parts = clean_str.split(".")
+    if len(parts) != 2:
+        raise ValueError(f"Invalid overs format '{raw_str}'")
+
+    try:
+        overs = int(parts[0])
+        balls = int(parts[1])
+    except ValueError:
+        raise ValueError(f"Non-integer components in overs string '{raw_str}'")
+
+    _validate_fractional_parts(overs, balls, raw_str)
+    return round(float(overs) + (balls / 6.0), 6)
+
+
+def _parse_whole_overs(clean_str: str, raw_str: str) -> float:
+    """Parse whole number cricket overs ('X') into float."""
+    try:
+        overs = int(clean_str)
+    except ValueError:
+        raise ValueError(f"Invalid overs string '{raw_str}'")
+
+    if overs < 0:
+        raise ValueError("Overs component cannot be negative")
+
+    return float(overs)
+
+
 def overs_to_decimal(overs_str: str) -> float:
     """Convert cricket overs notation (e.g. '45.3') to decimal overs (45.5).
 
@@ -16,34 +53,8 @@ def overs_to_decimal(overs_str: str) -> float:
         return 0.0
 
     if "." in clean_str:
-        parts = clean_str.split(".")
-        if len(parts) != 2:
-            raise ValueError(f"Invalid overs format '{overs_str}'")
-
-        try:
-            overs = int(parts[0])
-            balls = int(parts[1])
-        except ValueError:
-            raise ValueError(f"Non-integer components in overs string '{overs_str}'")
-
-        if overs < 0:
-            raise ValueError("Overs component cannot be negative")
-        if balls < 0 or balls > 5:
-            raise ValueError(
-                f"Balls component must be between 0 and 5, got {balls} in '{overs_str}'"
-            )
-
-        return round(float(overs) + (balls / 6.0), 6)
-    else:
-        try:
-            overs = int(clean_str)
-        except ValueError:
-            raise ValueError(f"Invalid overs string '{overs_str}'")
-
-        if overs < 0:
-            raise ValueError("Overs component cannot be negative")
-
-        return float(overs)
+        return _parse_fractional_overs(clean_str, overs_str)
+    return _parse_whole_overs(clean_str, overs_str)
 
 
 def decimal_to_overs(overs_decimal: float) -> str:
@@ -64,6 +75,13 @@ def balls_to_decimal_overs(balls: int) -> float:
     return round(balls / 6.0, 6)
 
 
+def _calculate_effective_overs(overs_faced: float, is_all_out: bool, max_overs: Optional[float]) -> float:
+    """Return max_overs if team was bowled all out and max_overs is specified."""
+    if is_all_out and max_overs is not None:
+        return float(max_overs)
+    return overs_faced
+
+
 def calculate_nrr(
     runs_scored: int,
     overs_faced: float,
@@ -82,7 +100,7 @@ def calculate_nrr(
       2. If overs faced or bowled is 0, that component defaults to 0.0 (division guard).
       3. Returns NRR rounded to 3 decimal places.
     """
-    effective_overs_faced = float(max_overs) if (is_all_out and max_overs is not None) else overs_faced
+    effective_overs_faced = _calculate_effective_overs(overs_faced, is_all_out, max_overs)
 
     if effective_overs_faced <= 0.0 and overs_bowled <= 0.0:
         return 0.0
@@ -106,6 +124,28 @@ class MatchNRREntry:
     opponent_all_out: bool
 
 
+def _get_entry_overs(overs: float, is_out: bool, max_ov: float) -> float:
+    """Helper to determine effective overs for a single tournament match entry."""
+    if is_out and max_ov > 0:
+        return float(max_ov)
+    return overs
+
+
+def _compute_run_rates(
+    runs_for: int,
+    overs_for: float,
+    runs_against: int,
+    overs_against: float,
+) -> float:
+    """Compute run rate difference with zero-division protection."""
+    if overs_for <= 0.0 and overs_against <= 0.0:
+        return 0.0
+
+    rr_for = (runs_for / overs_for) if overs_for > 0.0 else 0.0
+    rr_against = (runs_against / overs_against) if overs_against > 0.0 else 0.0
+    return round(rr_for - rr_against, 3)
+
+
 def calculate_cumulative_nrr(match_entries: List[MatchNRREntry]) -> float:
     """Recomputes cumulative NRR from all completed matches for a team in a tournament.
 
@@ -117,28 +157,19 @@ def calculate_cumulative_nrr(match_entries: List[MatchNRREntry]) -> float:
     if not match_entries:
         return 0.0
 
-    total_runs_scored = 0
-    total_effective_overs_faced = 0.0
-    total_runs_conceded = 0
-    total_effective_overs_bowled = 0.0
+    total_runs_scored = sum(m.runs_scored for m in match_entries)
+    total_effective_overs_faced = sum(
+        _get_entry_overs(m.overs_faced, m.is_all_out, m.max_overs) for m in match_entries
+    )
 
-    for m in match_entries:
-        total_runs_scored += m.runs_scored
-        if m.is_all_out and m.max_overs > 0:
-            total_effective_overs_faced += float(m.max_overs)
-        else:
-            total_effective_overs_faced += m.overs_faced
+    total_runs_conceded = sum(m.runs_conceded for m in match_entries)
+    total_effective_overs_bowled = sum(
+        _get_entry_overs(m.overs_bowled, m.opponent_all_out, m.max_overs) for m in match_entries
+    )
 
-        total_runs_conceded += m.runs_conceded
-        if m.opponent_all_out and m.max_overs > 0:
-            total_effective_overs_bowled += float(m.max_overs)
-        else:
-            total_effective_overs_bowled += m.overs_bowled
-
-    if total_effective_overs_faced <= 0.0 and total_effective_overs_bowled <= 0.0:
-        return 0.0
-
-    rr_for = (total_runs_scored / total_effective_overs_faced) if total_effective_overs_faced > 0.0 else 0.0
-    rr_against = (total_runs_conceded / total_effective_overs_bowled) if total_effective_overs_bowled > 0.0 else 0.0
-
-    return round(rr_for - rr_against, 3)
+    return _compute_run_rates(
+        total_runs_scored,
+        total_effective_overs_faced,
+        total_runs_conceded,
+        total_effective_overs_bowled,
+    )

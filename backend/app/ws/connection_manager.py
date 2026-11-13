@@ -47,51 +47,69 @@ class ConnectionManager:
         """Alias for broadcast for backward compatibility."""
         await self.broadcast(match_id, message)
 
-    def broadcast_sync(self, match_id: str, message: dict) -> None:
-        """Synchronously broadcast to match_id room from sync thread or async task."""
-        # 1. Try anyio.from_thread when inside FastAPI's worker thread pool
+    def _try_anyio_thread(self, match_id: str, message: dict) -> bool:
+        """Attempt broadcasting through AnyIO worker thread."""
         try:
             import anyio.from_thread
 
             anyio.from_thread.run(self.broadcast, match_id, message)
-            return
+            return True
         except Exception:
-            pass
+            return False
 
-        # 2. Try current running event loop
+    def _try_current_loop(self, match_id: str, message: dict) -> bool:
+        """Attempt broadcasting via current running event loop task."""
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self.broadcast(match_id, message))
-            return
+            return True
         except RuntimeError:
-            pass
+            return False
 
-        # 3. Try stored main loop if available and running
+    def _try_stored_loop(self, match_id: str, message: dict) -> bool:
+        """Attempt broadcasting via threadsafe call to stored main loop."""
         if self.loop and self.loop.is_running():
             try:
                 asyncio.run_coroutine_threadsafe(self.broadcast(match_id, message), self.loop)
-                return
+                return True
             except Exception:
                 pass
+        return False
 
-        # 4. Fallback: run in a new loop
+    def broadcast_sync(self, match_id: str, message: dict) -> None:
+        """Synchronously broadcast to match_id room from sync thread or async task."""
+        if self._try_anyio_thread(match_id, message):
+            return
+
+        if self._try_current_loop(match_id, message):
+            return
+
+        if self._try_stored_loop(match_id, message):
+            return
+
         try:
             asyncio.run(self.broadcast(match_id, message))
         except Exception:
             pass
 
+    async def _ping_room(self, room_id: str) -> None:
+        """Ping all sockets in a room and prune unresponsive connections."""
+        dead_connections: List[WebSocket] = []
+        for connection in list(self.active_connections.get(room_id, [])):
+            try:
+                await connection.send_text("ping")
+            except Exception:
+                dead_connections.append(connection)
+        for dead in dead_connections:
+            self.disconnect(room_id, dead)
+
     async def ping_all(self, match_id: Optional[str] = None) -> None:
         """Heartbeat / ping connected clients to keep connection alive and purge dead sockets."""
-        targets = [match_id] if match_id and match_id in self.active_connections else list(self.active_connections.keys())
-        for m_id in targets:
-            dead_connections: List[WebSocket] = []
-            for connection in list(self.active_connections.get(m_id, [])):
-                try:
-                    await connection.send_text("ping")
-                except Exception:
-                    dead_connections.append(connection)
-            for dead in dead_connections:
-                self.disconnect(m_id, dead)
+        if match_id and match_id in self.active_connections:
+            await self._ping_room(match_id)
+        else:
+            for m_id in list(self.active_connections.keys()):
+                await self._ping_room(m_id)
 
 
 manager = ConnectionManager()
