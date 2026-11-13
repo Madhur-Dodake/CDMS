@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 
 // Layouts & Guard
 import PublicLayout from './layouts/PublicLayout';
@@ -35,6 +36,7 @@ import AdminReportsPage from './pages/admin/AdminReportsPage';
 export default function App() {
   return (
     <BrowserRouter>
+      <Toaster position="top-right" toastOptions={{ duration: 3500 }} />
       <Routes>
         {/* Public Routes with Top Nav */}
         <Route element={<PublicLayout />}>

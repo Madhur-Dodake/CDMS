@@ -37,7 +37,7 @@ apiClient.interceptors.response.use(
   }
 );
 
-// Auth Service Helpers
+// Auth Service
 export const authService = {
   login: async (email, password, role) => {
     const res = await apiClient.post('/api/auth/login', { email, password, role });
@@ -45,6 +45,14 @@ export const authService = {
   },
   getCurrentUser: async () => {
     const res = await apiClient.get('/api/auth/me');
+    return res.data;
+  },
+};
+
+// Dashboard Service
+export const dashboardService = {
+  getSummary: async () => {
+    const res = await apiClient.get('/api/dashboard/summary');
     return res.data;
   },
 };
@@ -67,6 +75,14 @@ export const matchesService = {
     const res = await apiClient.get(`/api/matches/${matchId}/scorecard`);
     return res.data;
   },
+  schedule: async (data) => {
+    const res = await apiClient.post('/api/matches', data);
+    return res.data;
+  },
+  transition: async (matchId, event) => {
+    const res = await apiClient.post(`/api/matches/${matchId}/transition`, { event });
+    return res.data;
+  },
 };
 
 // Tournaments Service
@@ -77,6 +93,18 @@ export const tournamentsService = {
   },
   getById: async (tournamentId) => {
     const res = await apiClient.get(`/api/tournaments/${tournamentId}`);
+    return res.data;
+  },
+  create: async (data) => {
+    const res = await apiClient.post('/api/tournaments', data);
+    return res.data;
+  },
+  update: async (tournamentId, data) => {
+    const res = await apiClient.put(`/api/tournaments/${tournamentId}`, data);
+    return res.data;
+  },
+  delete: async (tournamentId) => {
+    const res = await apiClient.delete(`/api/tournaments/${tournamentId}`);
     return res.data;
   },
   getPointsTable: async (tournamentId) => {
@@ -91,6 +119,10 @@ export const tournamentsService = {
     const res = await apiClient.get('/api/matches', { params: { tournament_id: tournamentId, page_size: 50 } });
     return res.data;
   },
+  generateSchedule: async (tournamentId) => {
+    const res = await apiClient.post(`/api/tournaments/${tournamentId}/generate-schedule`);
+    return res.data;
+  },
 };
 
 // Teams Service
@@ -101,6 +133,18 @@ export const teamsService = {
   },
   getById: async (teamId) => {
     const res = await apiClient.get(`/api/teams/${teamId}`);
+    return res.data;
+  },
+  create: async (data) => {
+    const res = await apiClient.post('/api/teams', data);
+    return res.data;
+  },
+  update: async (teamId, data) => {
+    const res = await apiClient.put(`/api/teams/${teamId}`, data);
+    return res.data;
+  },
+  delete: async (teamId) => {
+    const res = await apiClient.delete(`/api/teams/${teamId}`);
     return res.data;
   },
   getRoster: async (teamId) => {
@@ -119,8 +163,68 @@ export const playersService = {
     const res = await apiClient.get(`/api/players/${playerId}`);
     return res.data;
   },
+  create: async (data) => {
+    const res = await apiClient.post('/api/players', data);
+    return res.data;
+  },
+  update: async (playerId, data) => {
+    const res = await apiClient.put(`/api/players/${playerId}`, data);
+    return res.data;
+  },
+  delete: async (playerId) => {
+    const res = await apiClient.delete(`/api/players/${playerId}`);
+    return res.data;
+  },
   getStats: async (playerId) => {
     const res = await apiClient.get(`/api/players/${playerId}/stats`);
+    return res.data;
+  },
+};
+
+// Venues Service
+export const venuesService = {
+  list: async (params = {}) => {
+    const res = await apiClient.get('/api/venues', { params });
+    return res.data;
+  },
+  getById: async (venueId) => {
+    const res = await apiClient.get(`/api/venues/${venueId}`);
+    return res.data;
+  },
+  create: async (data) => {
+    const res = await apiClient.post('/api/venues', data);
+    return res.data;
+  },
+  update: async (venueId, data) => {
+    const res = await apiClient.put(`/api/venues/${venueId}`, data);
+    return res.data;
+  },
+  delete: async (venueId) => {
+    const res = await apiClient.delete(`/api/venues/${venueId}`);
+    return res.data;
+  },
+};
+
+// Users Service (Admin only)
+export const usersService = {
+  list: async (params = {}) => {
+    const res = await apiClient.get('/api/users', { params });
+    return res.data;
+  },
+  getById: async (userId) => {
+    const res = await apiClient.get(`/api/users/${userId}`);
+    return res.data;
+  },
+  create: async (data) => {
+    const res = await apiClient.post('/api/users', data);
+    return res.data;
+  },
+  update: async (userId, data) => {
+    const res = await apiClient.put(`/api/users/${userId}`, data);
+    return res.data;
+  },
+  delete: async (userId) => {
+    const res = await apiClient.delete(`/api/users/${userId}`);
     return res.data;
   },
 };
