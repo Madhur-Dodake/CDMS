@@ -430,4 +430,15 @@ def transition_match(
     match.status = new_status
     db.commit()
     db.refresh(match)
+
+    try:
+        from app.services.scoring_service import get_match_snapshot
+        from app.ws.connection_manager import manager
+
+        snap = get_match_snapshot(db, match.match_id)
+        if snap:
+            manager.broadcast_sync(str(match.match_id), snap)
+    except Exception:
+        pass
+
     return _to_match_response(match)

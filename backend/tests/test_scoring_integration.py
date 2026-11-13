@@ -495,3 +495,4 @@ def test_play_full_two_over_match(
     assert comp_data["match_status"] == "completed"
     assert "won by" in comp_data["result_summary"].lower()
     assert "wickets" in comp_data["result_summary"].lower()
+

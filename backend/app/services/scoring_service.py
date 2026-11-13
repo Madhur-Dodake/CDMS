@@ -23,6 +23,7 @@ from app.services.scoring_engine import (
     replay,
     required_run_rate,
 )
+from app.ws.connection_manager import manager
 
 
 @dataclass
@@ -250,6 +251,86 @@ def _build_state_response(
     )
 
 
+def build_broadcast_payload(match: Match, state: Optional[InningsState]) -> dict:
+    """Construct broadcast payload per spec:
+    {match_id, status, score, wickets, overs, run_rate, required_rate, target,
+     striker, non_striker, bowler, last_ball, recent_balls}
+    """
+    status_str = match.status.value if hasattr(match.status, "value") else str(match.status)
+    if state is None:
+        return {
+            "match_id": str(match.match_id),
+            "status": status_str,
+            "score": 0,
+            "wickets": 0,
+            "overs": "0.0",
+            "run_rate": 0.0,
+            "required_rate": None,
+            "target": None,
+            "striker": None,
+            "non_striker": None,
+            "bowler": None,
+            "last_ball": None,
+            "recent_balls": [],
+        }
+
+    rem_balls = max(0, (state.max_overs * 6) - state.legal_balls)
+    runs_needed = (state.target_runs - state.total_runs) if state.target_runs is not None else 0
+    crr = current_run_rate(state.total_runs, state.legal_balls)
+    rrr = required_run_rate(runs_needed, rem_balls) if state.innings_no == 2 else None
+    last_ball = state.recent_balls[-1] if state.recent_balls else None
+
+    return {
+        "match_id": str(match.match_id),
+        "status": status_str,
+        "score": state.total_runs,
+        "wickets": state.wickets,
+        "overs": overs_display(state.legal_balls),
+        "run_rate": crr,
+        "required_rate": rrr,
+        "target": state.target_runs,
+        "striker": state.striker_id,
+        "non_striker": state.non_striker_id,
+        "bowler": state.current_bowler_id,
+        "last_ball": last_ball,
+        "recent_balls": list(state.recent_balls),
+    }
+
+
+def get_match_snapshot(db: Session, match_id: uuid.UUID) -> Optional[dict]:
+    """Retrieve full match state snapshot for WebSocket connection or polling."""
+    match = db.get(Match, match_id)
+    if not match:
+        return None
+
+    # Check live session cache first
+    session = LIVE_MATCH_CACHE.get(match_id)
+    if session:
+        return build_broadcast_payload(match, session.innings_state)
+
+    # If innings exist in DB, rebuild state from DB
+    current_innings = (
+        db.query(Innings)
+        .filter(Innings.match_id == match_id)
+        .order_by(Innings.innings_no.desc())
+        .first()
+    )
+    if current_innings:
+        try:
+            session = _get_or_load_session(db, match_id)
+            return build_broadcast_payload(match, session.innings_state)
+        except Exception:
+            pass
+
+    return build_broadcast_payload(match, None)
+
+
+def broadcast_match_state(db: Session, match: Match, state: Optional[InningsState]) -> None:
+    """Broadcast current match snapshot to all WebSocket viewers."""
+    payload = build_broadcast_payload(match, state)
+    manager.broadcast_sync(str(match.match_id), payload)
+
+
 # -------------------------------------------------------------
 # SCORING API WORKFLOW FUNCTIONS
 # -------------------------------------------------------------
@@ -358,7 +439,7 @@ def start_match(
         current_over_bowler_id=payload.opening_bowler_id,
     )
     LIVE_MATCH_CACHE[match_id] = session
-
+    broadcast_match_state(db, match, initial_state)
     return _build_state_response(match, innings1, initial_state)
 
 
@@ -485,6 +566,7 @@ def record_ball(
     db.refresh(match)
 
     session.innings_state = new_state
+    broadcast_match_state(db, match, new_state)
     return _build_state_response(match, innings, new_state)
 
 
@@ -574,6 +656,7 @@ def undo_last_ball(
     db.commit()
     db.refresh(innings)
     db.refresh(match)
+    broadcast_match_state(db, match, new_state)
 
     return _build_state_response(match, innings, new_state)
 
@@ -654,6 +737,7 @@ def end_innings(
     session.innings_state = i2_state
     session.previous_over_bowler_id = None
     session.current_over_bowler_id = i2_bowling_xi[0]
+    broadcast_match_state(db, match, i2_state)
 
     return _build_state_response(match, innings2, i2_state)
 
@@ -682,6 +766,7 @@ def complete_match(
     db.commit()
     db.refresh(match)
     db.refresh(active_innings)
+    broadcast_match_state(db, match, session.innings_state)
 
     return _build_state_response(match, active_innings, session.innings_state)
 
@@ -758,13 +843,17 @@ def suspend_match(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Match with id '{match_id}' not found")
 
     verify_match_scorer(match, current_user)
-    match.status = transition(match.status, MatchEvent.SUSPEND)
+    try:
+        match.status = transition(match.status, MatchEvent.SUSPEND)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     session = _get_or_load_session(db, match_id)
     innings = db.get(Innings, session.current_innings_id)
 
     db.commit()
     db.refresh(match)
+    broadcast_match_state(db, match, session.innings_state)
     return _build_state_response(match, innings, session.innings_state)
 
 
@@ -779,11 +868,16 @@ def resume_match(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Match with id '{match_id}' not found")
 
     verify_match_scorer(match, current_user)
-    match.status = transition(match.status, MatchEvent.RESUME)
+    try:
+        match.status = transition(match.status, MatchEvent.RESUME)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     session = _get_or_load_session(db, match_id)
     innings = db.get(Innings, session.current_innings_id)
 
     db.commit()
     db.refresh(match)
+    broadcast_match_state(db, match, session.innings_state)
     return _build_state_response(match, innings, session.innings_state)
+
