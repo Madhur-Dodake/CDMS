@@ -16,6 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 # Add backend directory to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from app.core.auth import get_password_hash
 from app.core.database import SessionLocal, engine
 from app.models import (
     Base,
@@ -58,24 +59,30 @@ def seed_database() -> None:
         admin_user = User(
             name="System Administrator",
             email="admin@cdms.com",
-            password="admin123",
+            password=get_password_hash("admin123"),
             role=UserRole.ADMIN,
         )
         scorer_1 = User(
             name="Ramesh Tendulkar (Scorer)",
             email="scorer1@cdms.com",
-            password="scorer123",
+            password=get_password_hash("scorer123"),
             role=UserRole.SCORER,
         )
         scorer_2 = User(
             name="Sunil Gavaskar (Scorer)",
             email="scorer2@cdms.com",
-            password="scorer123",
+            password=get_password_hash("scorer123"),
             role=UserRole.SCORER,
         )
-        session.add_all([admin_user, scorer_1, scorer_2])
+        viewer_user = User(
+            name="Cricket Fan (Viewer)",
+            email="viewer@cdms.com",
+            password=get_password_hash("viewer123"),
+            role=UserRole.VIEWER,
+        )
+        session.add_all([admin_user, scorer_1, scorer_2, viewer_user])
         session.flush()
-        print(f"Created 3 users (1 Admin: {admin_user.email}, 2 Scorers).")
+        print(f"Created 4 users (1 Admin: {admin_user.email}, 2 Scorers, 1 Viewer: {viewer_user.email}).")
 
         # 2. Create Venues
         venues = [

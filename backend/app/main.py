@@ -3,6 +3,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.health import router as health_router
+from app.api.auth import router as auth_router
 from app.schemas.health import HealthResponse
 from app.ws.connection_manager import manager
 
@@ -23,6 +24,7 @@ app.add_middleware(
 
 # Register API routers
 app.include_router(health_router, prefix="/api", tags=["Health"])
+app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])

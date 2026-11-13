@@ -12,12 +12,17 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
 
-    POSTGRES_SERVER: str = "localhost"
+    POSTGRES_SERVER: str = "127.0.0.1"
     POSTGRES_PORT: int = 5432
     POSTGRES_USER: str = "cdms_user"
     POSTGRES_PASSWORD: str = "cdms_password"
     POSTGRES_DB: str = "cdms_db"
     DATABASE_URL: str = ""
+
+    # JWT Authentication Configuration
+    JWT_SECRET_KEY: str = "cdms-insecure-secret-key-change-in-production-1234567890"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
